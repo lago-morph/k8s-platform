@@ -8,6 +8,38 @@ last, the current state, and the next concrete steps. Keep it factual
 
 ## NEW SESSION QUICKSTART (read this first)
 
+> ## ▶ 2026-09-08 — 🟢 STEP 1 OF THE NEW PLAN: repo re-verified after two idle months; fresh account probed; gate-ordering defect fixed in the recipe
+> **Branch `claude/happy-goodall-3raowd`.** `main` = `d5e1ae1` (2026-07-05),
+> no open PRs, all last gates green. Fresh Pluralsight account
+> `058264287172` (empty: no EKS/state bucket/OIDC/Cognito; hosted zone only). <!-- noqa: account-id - run provenance, account rotates -->
+> **GHA secrets VERIFIED for the new account** by the creds probe
+> `terraform-test.yml` test/test-e2e run **34273668606** (creds PASS, zone
+> PASS, state backend FAIL = expected before bootstrap). Dispatched and read
+> via the **native GitHub MCP tools** (`actions_run_trigger`,
+> `get_job_logs`) — first time; jentic not needed for dispatch/logs
+> (`ai/environment.md` §6). Jentic hosted execution ends 2026-09-20.
+> **Fixed this branch:** the build recipe waited for the XPlatformCluster
+> XR Ready before pulling `spoke-access`, which deadlocks now that the
+> IdP association (needs Keycloak, which needs spoke-access) is composed
+> (retro 2026-07-06-255 remedy 8, never landed). Recipe now waits on the
+> four published status facts + NodeGroup Ready, pulls gate 2, then waits
+> XR Ready last (`docs/site/how-to/build-the-platform-from-nothing.md`;
+> headers of `argocd/apps/spoke-access.yaml` and the XSpokeAccess XR).
+> **Sandbox git facts (probed):** branch create + force-with-lease OK;
+> non-branch refs and branch deletes → HTTP 403. Leftover branch
+> `probe-delete-me-ref-test` on origin needs owner deletion (UI).
+> **Beads groundwork:** `ai/beads-dolt-git-remotes.md` (condensed Dolt
+> git-remote + beads facts + sandbox constraints + step-2 experiments).
+> **STEP 2 INTAKE (owner plan 2026-09-08, steps 1–6):** replace this
+> handoff + roadmap; classify every open issue defect-vs-feature for the
+> "feature complete" definition (all non-feature OIs resolved; anything
+> installed and erroring fixed + minimally tested); seed beads (Dolt on a
+> branch ref, hooks-driven); rewrite the AGENTS.md posture block; carry
+> the uncovered items from closed issue #22 into beads (shellcheck,
+> actionlint, python lint, a `pull_request:` trigger = LESSONS S4).
+> Retros are NOT harvested until the owner asks.
+
+
 > ## ▶ 2026-07-06 LATEST — 🟢 ES ANTI-DRIFT DEFECT fixed red-first (L40); tunnel-reuse + docs remedies; retro addendum. PR #260. (Post-merge association verify was ALSO done independently by #259 — see that block below; this branch adds the defect #259 missed.)
 > **Branch `claude/post-merge-propagation-verify-doeg57`, PR #260 (rebased
 > onto `main` past #256–#259).** Account `975050361443` live + converged. <!-- noqa: account-id - run provenance, account rotates -->
