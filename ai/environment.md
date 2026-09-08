@@ -60,17 +60,20 @@ design — discover it live, never hardcode it (enforced:
 - Blocked API surfaces are bridged by skills: GitHub Actions REST →
   `ext-github`; generic APIs → `external-api-bridge`; kube-API → CI workflows
   (`kube-diagnose.yml`) or the SSM relay (`sandbox-kubectl-access`).
-- **`github.com/*/releases/download` is org-policy 403-blocked** (verified
-  2026-07-05; the proxy status endpoint says report, don't route around).
-  api.github.com via the MCP tools, git push, codeload, and most vendor
-  hosts are fine. Consequences: `test_helm_render.sh` fails IN THE SANDBOX
-  on unmodified main (CI is unaffected), the argocd CLI cannot be
-  installed (use the kubectl-patch sync form), and the SessionStart tool
-  installer dies on its first yq download. Working install routes:
-  `go install` via proxy.golang.org (yq, kubeconform), get.helm.sh (helm),
+- **`github.com/*/releases/download` reachability varies by session.**
+  2026-07-05: org-policy 403 (argocd CLI uninstallable, `test_helm_render.sh`
+  red in-sandbox, the SessionStart installer died on yq). **2026-09-08:
+  reachable again** — the SessionStart hook installed yq, kubeconform,
+  crank, helm, argocd v3.4.3 and kubectl from those URLs, and a direct
+  range request returned 206. Do not assume either state: probe once, and
+  if blocked fall back to the alternate routes: `go install` via
+  proxy.golang.org (yq, kubeconform), get.helm.sh (helm),
   releases.crossplane.io (crank), releases.hashicorp.com (terraform),
   awscli.amazonaws.com / dl.k8s.io / s3.amazonaws.com (aws, kubectl,
-  session-manager-plugin).
+  session-manager-plugin), and the kubectl-patch sync form instead of the
+  argocd CLI. Raw REST to `api.github.com` (release JSON) returns 403
+  regardless — use the GitHub MCP tools; `registry.npmjs.org` is direct
+  (no proxy) and works for pinned npm installs such as `@beads/bd`.
 
 ## 4. Kubernetes & platform access
 

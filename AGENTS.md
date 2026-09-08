@@ -26,10 +26,12 @@ outputs, the cluster-facts mechanism) — never through commits or hand-edits.
 
 1. `scripts/whereami.sh` — establish the real account/state; treat the account
    as empty and `ai/handoff.md` as belief until the live API confirms.
-2. `ai/handoff.md` — last verified state and the next concrete action.
+2. `ai/handoff.md` — last verified state. `ai/roadmap.md` — the plan, the
+   steps, and the definition of "feature complete". `bd ready` — the task
+   graph (beads; hooks install it and keep it synced, `docs/open-issues.md`).
 3. `SUBSTRATE-READINESS.md` — the definition of done and what's still owed.
-4. `docs/open-issues.md` — registered debt. `ai/environment.md` — sandbox
-   capability profile (read before declaring anything unreachable/unavailable).
+4. `ai/environment.md` — sandbox capability profile (read before declaring
+   anything unreachable/unavailable).
 
 When work is scoped to a spec in `ai/specs/`, that spec is the sole design
 authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize.
@@ -62,11 +64,12 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
   One data point that fits is "consistent with X", not "X is the cause".
 - When CI fails, **read the failure log before theorizing** or reading
   anything else.
-- Every undiagnosed failure either gets diagnosed this session or gets an
-  entry in `docs/open-issues.md` (symptom, evidence, ruled-out, next step).
-  No silent skips.
-- `ai/handoff.md` carries verified facts (run IDs, SHAs, PR numbers), open
-  work, and the next action — no narrative, speculation, or emotion.
+- Every undiagnosed failure either gets diagnosed this session or gets a
+  beads issue (`bd create "<symptom>" -t bug`, body: symptom, evidence,
+  ruled-out, next step). No silent skips.
+- `ai/handoff.md` carries verified facts only (run IDs, SHAs, PR numbers,
+  account shape); open work and next actions live in beads — no narrative,
+  speculation, or emotion.
 - Artifacts a human will read follow the `human-scoped-deliverables` skill:
   plain-language lead, tables/small diagrams, IDs in a footer. Never commit a
   runnable-looking "next-session prompt" (enforced by lint; print it in chat).
@@ -133,9 +136,11 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
 - Before any long CI dispatch the pre-dispatch audit runs (a PreToolUse hook
   blocks chainsaw dispatches that fail it).
 
-## Current operating posture (owner-set, 2026-06-10)
+## Current operating posture (owner-set, 2026-09-08)
 
-Unattended/overnight volume runs are **paused** until the clean-build gate
-(`SUBSTRATE-READINESS.md`) has been green twice. Until then: short, scoped
-sessions with a machine-verifiable exit condition. The only feature backlog is
-the four durable fixes + the from-scratch evidence loop (`ai/LESSONS.md` §5).
+The clean-build gate has been green five times; the volume-run pause is
+lifted, but sessions stay scoped to beads tasks with a machine-verifiable
+exit. The backlog is `ai/roadmap.md`: step 3 (feature complete: build #6 +
+every classed defect) before any documentation wave, e2e suite, or refactor.
+Retrospectives are not harvested until the owner asks. Model choice per
+step is the owner's (`ai/roadmap.md` "Model plan").
