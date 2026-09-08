@@ -94,8 +94,9 @@ Resolved entries stay in the archived register for the rationale record.
 
 ## How the plan is tracked
 
-Beads (`bd`) holds the task graph; Dolt data lives on the branch
-`beads-dolt-data` of this repository (`ai/beads-dolt-git-remotes.md`
+Beads (`bd`, prefix `kp`) holds the task graph; Dolt data lives on the
+branch `beads-dolt-data` of this repository (plus Dolt's own
+`__dolt_remote_info__`; neither is a code branch — `ai/beads-dolt-git-remotes.md`
 explains why a branch and how sync works). Hooks, not instructions,
 keep it in sync: session start installs the pinned `bd` and pulls;
 session end and pre-compaction push; a pre-push guard refuses to push

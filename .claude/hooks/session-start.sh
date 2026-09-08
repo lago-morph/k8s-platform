@@ -40,7 +40,6 @@ fi
 
 # Never block session start on a transient install/network hiccup — the
 # agent runs scripts/whereami.sh first (AGENTS §8.1) and will see anything missing.
-exit 0
 
 # Beads (the task graph, ai/roadmap.md): install the pinned bd, pull the
 # Dolt data from the beads-dolt-data branch (bootstrap on a fresh clone),
@@ -54,6 +53,10 @@ if [ -f "${REPO_DIR}/scripts/beads-sync.sh" ]; then
   fi
   if command -v bd >/dev/null 2>&1; then
     ( cd "${REPO_DIR}" && bash scripts/beads-sync.sh bootstrap ) || echo "session-start: beads bootstrap/pull FAILED — run: bash scripts/beads-sync.sh bootstrap" >&2
-    ( cd "${REPO_DIR}" && bd prime 2>/dev/null ) || true
+    # Not `bd prime`: its generic "session close protocol" text conflicts
+    # with this repo's done-contract. One status line + the ready queue.
+    ( cd "${REPO_DIR}" && bash scripts/beads-sync.sh status && bd ready 2>/dev/null | head -20 ) || true
   fi
 fi
+
+exit 0
