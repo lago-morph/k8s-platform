@@ -33,6 +33,13 @@ MCP server. Built per `ai/specs/ext-github-design.md` via the
 `external-api-bridge` meta-skill. If the spec disagrees with anything
 here, **the spec wins** — fix this skill, not the spec.
 
+> **2026-09-08 update:** the sandbox's GitHub MCP server now exposes
+> `actions_run_trigger` (workflow_dispatch) and `get_job_logs` natively —
+> both verified working (run 34273668606). Prefer those for dispatch and
+> logs; this skill's jentic path is still required for endpoint #5
+> (writing `.github/workflows/*`) and stays as the fallback. Jentic's
+> hosted execution is announced to end 2026-09-20 (`ai/environment.md`).
+
 ## 1. When to use
 
 The sandbox's GitHub MCP server exposes PR/issue/content/branch/release

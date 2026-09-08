@@ -98,14 +98,35 @@ Cluster creation is intentionally **not** automatic: two Applications
 are committed without automated sync, so bringing real infrastructure
 into existence is an explicit operator act.
 
+Do **not** wait for the composite cluster resource to become `Ready`
+between the two gates. Its composed EKS identity-provider association
+validates the platform's own Keycloak issuer, and Keycloak only deploys
+after the second gate registers the spoke, so waiting for `Ready` first
+deadlocks a fresh build. The second gate consumes the cluster's
+*published facts* (four status fields the spoke-access composition
+observes) and needs a node group that can run workloads; wait for
+those instead.
+
 ```bash
-# 1. Create the platform services cluster (expect ~15-20 minutes to Ready):
+# 1. Create the platform services cluster (expect ~15-20 minutes):
 argocd app sync platform-cluster-claim
+
+#    Wait for the facts the second gate consumes, not for Ready:
+for fact in oidcIssuer endpoint clusterCaData certificateArn; do
+  kubectl wait --for=jsonpath="{.status.${fact}}" --timeout=1500s \
+    xplatformclusters -A --all
+done
 kubectl wait --for=condition=Ready --timeout=1500s \
-  xplatformclusters -A --all
+  nodegroups.eks.aws.m.upbound.io -A --all
 
 # 2. Register the new spoke with the hub:
 argocd app sync spoke-access
+
+# 3. The composite reaches Ready once the add-on stack (Keycloak
+#    included) has converged and the identity-provider association
+#    validates; expect roughly the stack's rollout time:
+kubectl wait --for=condition=Ready --timeout=2400s \
+  xplatformclusters -A --all
 ```
 
 Once the spoke registers, the cluster-fact-driven ApplicationSets fan

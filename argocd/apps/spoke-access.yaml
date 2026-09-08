@@ -8,14 +8,18 @@
 #   - Syncing the XSpokeAccess XR makes Crossplane create REAL AWS
 #     resources (an OIDC provider, an IAM role/policy, EKS access
 #     entries).
-#   - The XR is GATED on the platform cluster being Ready (auto-008 C2):
-#     spec.oidcIssuer must first be overlaid from
-#     XPlatformCluster.status.oidcIssuer (see the XR file header). Auto-
-#     sync would race the cluster provision and patch an empty issuer.
+#   - The XR is GATED on the platform cluster's PUBLISHED FACTS (auto-008
+#     C2, ADR-0010): its Composition observes status.oidcIssuer / endpoint
+#     / clusterCaData / certificateArn from the XPlatformCluster XR. Auto-
+#     sync would race the cluster provision and observe empty facts.
 #
 # So sync is a deliberate operator action via the ArgoCD UI or
-# `argocd app sync spoke-access`, AFTER `XPlatformCluster platform`
-# reaches Ready and the issuer overlay is applied. Mirrors the manual-sync
+# `argocd app sync spoke-access`, AFTER those four status fields are
+# populated and the node group is Ready. Do NOT wait for the
+# XPlatformCluster XR itself to be Ready first: its composed EKS
+# IdentityProviderConfig validates the Keycloak issuer, and Keycloak only
+# deploys after THIS gate registers the spoke, so Ready-before-spoke-access
+# deadlocks a fresh build (retro 2026-07-06-255). Mirrors the manual-sync
 # posture of platform-cluster-claim.yaml.
 #
 # A separate Application (not folded into platform-cluster-claim, whose
@@ -27,8 +31,9 @@ metadata:
   name: spoke-access
   namespace: argocd
   annotations:
-    # Wave 20 — after platform-cluster-claim (wave 10). The cluster must
-    # be Ready before this Application's XSpokeAccess XR is synced.
+    # Wave 20 — after platform-cluster-claim (wave 10). The cluster's
+    # status facts must be published (not: the XR Ready) before this
+    # Application's XSpokeAccess XR is synced — see the header.
     argocd.argoproj.io/sync-wave: "20"
 spec:
   project: k8-platform

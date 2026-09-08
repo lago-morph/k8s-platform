@@ -42,6 +42,12 @@ design — discover it live, never hardcode it (enforced:
 - The git push credential accepts **branch refs only** (no tags) and lacks the
   `workflow` OAuth scope — pushes touching `.github/workflows/**` are refused;
   route workflow-file writes through the `ext-github` skill (jentic bridge).
+  Verified 2026-09-08: creating a branch and force-updating an existing
+  branch (`--force-with-lease`) both succeed; pushing any non-branch ref
+  (e.g. `refs/dolt/data`) and deleting a branch both fail with HTTP 403
+  from the proxy. Branch cleanup therefore needs the GitHub UI or an API
+  path, and Dolt/beads data must live on a branch ref
+  (`ai/beads-dolt-git-remotes.md`).
 
 ## 3. Network egress
 
@@ -104,6 +110,11 @@ design — discover it live, never hardcode it (enforced:
 
 ## 6. CI interaction mechanics
 
+- **Native dispatch works (verified 2026-09-08):** the GitHub MCP server now
+  exposes `actions_run_trigger` (`run_workflow` with `ref` + `inputs`) and
+  `get_job_logs` (`run_id` + `failed_only` + `return_content`); run
+  34273668606 was dispatched and its logs read that way, no jentic hop.
+  Jentic remains the only path for **writing** `.github/workflows/**`.
 - Heavy workflows (`chainsaw.yml`, `terraform-test.yml`, `integration-tests`,
   `live-verify`) are `workflow_dispatch`-only by design (cost); light static
   gates run on push. `chainsaw-verify.yml` / `live-evidence-verify.yml` gate
