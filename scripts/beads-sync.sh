@@ -120,6 +120,9 @@ cmd_bootstrap() {
     [ -n "$db" ] || die "no .beads/metadata.json — run bd init first"
     url=$(origin_url) || die "no git remote origin"
     sha=$(remote_data_sha)
+    # bd warns on every command when .beads is group/world readable; a fresh
+    # git clone creates it 0755.
+    chmod 700 "$root/.beads" 2>/dev/null || true
 
     if [ -d "$root/.beads/embeddeddolt/$db/.dolt" ]; then
         if [ -z "$sha" ]; then
