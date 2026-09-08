@@ -18,11 +18,14 @@
 #     every cluster fact is observed.
 #
 # GATING (auto-008 C2): this XR consumes the cluster's *published* status
-# and is meaningless until the cluster is Ready. It is sync-wave 20 (after
-# the cluster claim at wave 10) and its ArgoCD Application
-# (argocd/apps/spoke-access.yaml) is MANUAL-SYNC ONLY — sync is a
-# deliberate operator action AFTER `XPlatformCluster platform` reaches
-# Ready.
+# (oidcIssuer, endpoint, clusterCaData, certificateArn) and is meaningless
+# until those facts exist. It is sync-wave 20 (after the cluster claim at
+# wave 10) and its ArgoCD Application (argocd/apps/spoke-access.yaml) is
+# MANUAL-SYNC ONLY — sync is a deliberate operator action AFTER the four
+# status facts are populated and the node group is Ready. Do NOT wait for
+# `XPlatformCluster platform` to be Ready first: its composed EKS
+# IdentityProviderConfig needs the Keycloak that this gate's registration
+# unlocks, so Ready-before-spoke-access deadlocks a fresh build.
 #
 # NO OVERLAYS (ADR-0010 PR-2): the OIDC issuer, API endpoint, cluster CA
 # and certificate ARN are account-ephemeral (AGENTS §8.1) and are OBSERVED
@@ -41,9 +44,9 @@ metadata:
   name: platform
   namespace: platform
   annotations:
-    # Wave 20 — after the XPlatformCluster XR (wave 10). The cluster must
-    # be Ready (its status facts populated) before this XR is synced;
-    # the wave + manual-sync Application together enforce the gate.
+    # Wave 20 — after the XPlatformCluster XR (wave 10). The cluster's
+    # status facts must be populated (not: the XR Ready) before this XR
+    # is synced; the wave + manual-sync Application together enforce it.
     argocd.argoproj.io/sync-wave: "20"
 spec:
   clusterName: k8-platform-services
