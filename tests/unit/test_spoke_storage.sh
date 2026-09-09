@@ -5,7 +5,7 @@
 # The bug this reproduces: a spoke shipped NO CSI driver and NO default
 # StorageClass, so every observability PVC (prometheus, alertmanager, loki)
 # stayed Pending forever with an EMPTY storageclass column — observed live on
-# build #6 (account 801822495028, cluster k8-platform-services):
+# build #6 (cluster k8-platform-services):
 #   * `aws eks list-addons --cluster-name k8-platform-services` => []
 #   * `kubectl get csidrivers` => efs.csi.aws.com only (no ebs.csi.aws.com)
 #   * `kubectl get sc` => gp2 (in-tree kubernetes.io/aws-ebs), NOT default
