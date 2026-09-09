@@ -40,7 +40,8 @@ platform services cluster, prefix `platform-`):
 | `platform-eso` | Synced/Healthy | Secret sync (ClusterSecretStore `aws-secrets-manager`) |
 | `platform-hello` | Synced/Healthy | The built-in demo app — the behavioral gate's target |
 | `platform-keycloak` | Synced/Healthy | SSO components (logins land with the identity phase) |
-| observability set (kube-prometheus-stack, loki, alloy) | **Degraded / Progressing — known** | Blocked on the registered spoke-storage gap; expected until it closes |
+| observability set (kube-prometheus-stack, loki, alloy) | Synced/Healthy | The spoke-storage gap closed on clean build #6 (2026-09-09): with the EBS CSI addon and the default `gp3` StorageClass in place, all 3 monitoring PVCs Bound and both previously non-green Applications reached Healthy |
+| storage (the default `gp3` StorageClass) | Synced/Healthy | Added by build #6; the Kubernetes half of spoke storage — the `aws-ebs-csi-driver` addon and its IRSA role are composed, not delivered here |
 
 ## Infrastructure layer (composite resources)
 
@@ -58,12 +59,14 @@ All with conditions `Synced`/`Ready`/`Responsive` = True:
 |---|---|
 | `https://hello.platform.<domain>` | HTTP 200 over verified TLS — **the** behavioral gate |
 | `https://argocd.management.<domain>` | Argo CD UI answering with a valid certificate (operator login) |
-| `https://grafana.platform.<domain>` | Not yet — arrives with the observability storage fix |
+| `https://grafana.platform.<domain>` | Host configured by the kube-prometheus-stack Application, which has been Healthy on storage since build #6 — but **no HTTP check of this endpoint has been recorded on any build**, so it is `pending clean-build verification`, not a green row |
 
 ## Reading this page as an oracle
 
 1. Sweep the Application tables; every row must match its expected
-   state, including the two deliberately non-green rows.
+   state, including the one deliberately non-green row
+   (`workload1-cluster`, OutOfSync by design — the observability set
+   stopped being expectedly non-green on build #6).
 2. Sweep the XR list for Ready.
 3. Hit the endpoints.
 4. Anything present on the cluster but absent here, or here but absent

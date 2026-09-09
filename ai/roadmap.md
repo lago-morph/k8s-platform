@@ -8,14 +8,15 @@ than hybridizing.
 
 ## Where this starts
 
-Five consecutive clean builds have proven the substrate from committed
+Six consecutive clean builds have proven the substrate from committed
 source with zero manual steps (`SUBSTRATE-READINESS.md`). The phase-5
 identity work (Keycloak federated to Cognito, kubectl federated to
-Keycloak) is built and merged but can only be *proven* on a fresh
-Keycloak database, so readiness rows 10 and 11 still read `pending
-clean-build verification`. The repository was idle from 2026-07-06 to
-2026-09-08. The owner's frustration is exact: the platform has never been
-seen working end to end as one thing.
+Keycloak) could only be *proven* on a fresh Keycloak database, and clean
+build #6 (2026-09-09, rotated account) did it: readiness rows 10 and 11
+are `DONE (1x clean build: #6)`, recorded by run ID with their caveats.
+The repository was idle from 2026-07-06 to 2026-09-08. The owner's
+frustration was exact: the platform had never been seen working end to
+end as one thing.
 
 ## The MVP criterion (owner, 2026-09-09)
 
@@ -106,9 +107,9 @@ explicit ruling.
 
 | ID | One line | Class | Why |
 |---|---|---|---|
-| Rows 10/11 | Keycloak↔Cognito federation; kubectl via Keycloak | defect (unproven) | The point of build #6 |
+| Rows 10/11 | Keycloak↔Cognito federation; kubectl via Keycloak | resolved | Proven on clean build #6; both rows `DONE`, oracle `build6-2220` |
 | OI-2026-06-11-2 | Kyverno OOM / unpullable cleanup jobs / fail-closed webhook | v2.0 (remove now) | Owner: dev-account node memory; removal is the first step 3 bead |
-| OI-2026-06-11-3 | Spokes ship no CSI driver / StorageClass; observability pair Pending | defect | Installed and erroring |
+| OI-2026-06-11-3 | Spokes ship no CSI driver / StorageClass; observability pair Pending | resolved (ordering open) | Fixed and proven live on build #6; the class-then-PVC ordering is `kp-2al.19` |
 | OI-2026-07-06-5 | No documented access path | docs | Admin page (VPC access, Argo CD password, facts); end-user path proven by build #6; tenant self-service is v2.0 |
 | OI-2026-07-06-4 | No human-executed bring-up | docs + owner | CI-dispatch path declared supported; a person runs it (can double as the step 5 admin scenario) |
 | OI-2026-07-06-1 | XDatabase has no cross-cluster consumption contract | docs (ticket runbook) + v2.0 (self-service) | Tenants cannot place XDatabase on the hub; admin ticket + PushSecret + ExternalSecret works today with no new code |
@@ -132,9 +133,9 @@ Resolved entries stay in the archived register for the rationale record.
 | Component | Expected today | After step 3 |
 |---|---|---|
 | hub Kyverno | removed (kp-2al.17); no `kyverno` namespace or pods | removed (v2.0); policies dormant in `policies/` |
-| spoke observability (prometheus, alertmanager, loki) | Degraded / Progressing (no storage) | Healthy with a Bound-PVC oracle |
+| spoke observability (prometheus, alertmanager, loki) | Synced/Healthy since clean build #6 (composed EBS CSI addon + default `gp3` StorageClass; 3/3 PVCs Bound) | unchanged — the Bound-PVC oracle landed with it (spoke-storage check, RUN_ID `build6-2220`); class-then-PVC ordering is still `pending clean-build verification` |
 | `workload1-cluster` gate | OutOfSync by design | unchanged (fan-out exercised in step 5) |
-| Keycloak realm broker | absent on a live realm (IGNORE_EXISTING) | present on build #6, federation oracle PASS |
+| Keycloak realm broker | present since clean build #6 (imported on the fresh Keycloak DB) | achieved — federation oracle PASS on build #6, RUN_ID `build6-2220` (rows 10/11 DONE) |
 
 ## Step 5 shape (decided 2026-09-09)
 
