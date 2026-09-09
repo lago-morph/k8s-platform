@@ -132,9 +132,9 @@ Resolved entries stay in the archived register for the rationale record.
 | Component | Expected today | After step 3 |
 |---|---|---|
 | hub Kyverno | removed (kp-2al.17); no `kyverno` namespace or pods | removed (v2.0); policies dormant in `policies/` |
-| spoke observability (prometheus, alertmanager, loki) | Degraded / Progressing (no storage) | Healthy with a Bound-PVC oracle |
+| spoke observability (prometheus, alertmanager, loki) | Synced/Healthy since clean build #6 (composed EBS CSI addon + default `gp3` StorageClass; 3/3 PVCs Bound) | unchanged — the Bound-PVC oracle landed with it (spoke-storage check, RUN_ID `build6-2220`); class-then-PVC ordering is still `pending clean-build verification` |
 | `workload1-cluster` gate | OutOfSync by design | unchanged (fan-out exercised in step 5) |
-| Keycloak realm broker | absent on a live realm (IGNORE_EXISTING) | present on build #6, federation oracle PASS |
+| Keycloak realm broker | present since clean build #6 (imported on the fresh Keycloak DB) | achieved — federation oracle PASS on build #6, RUN_ID `build6-2220` (rows 10/11 DONE) |
 
 ## Step 5 shape (decided 2026-09-09)
 
