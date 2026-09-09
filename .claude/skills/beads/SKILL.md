@@ -47,6 +47,14 @@ even with a ticket is fixed now. Everything else is a `feature` bead under
 the v2.0 epic (`bd list -l v2.0`), re-evaluated in step 6. Do not build
 v2.0 items early, even when the gap is obvious.
 
+## One step at a time (owner rule, 2026-09-09)
+
+Detailed planning happens one step at a time, with the owner, after the
+previous step closes; each step epic has a GATE bead (label `gate`) that
+every child depends on. Beads written ahead of that session are labelled
+`sketch`: do not elaborate, split, or work them. Never define scenarios,
+page lists, or task breakdowns for a future step.
+
 ## Improving this skill
 
 When you learn something that would have saved you time here (a bd flag,

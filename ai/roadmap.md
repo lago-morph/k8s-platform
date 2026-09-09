@@ -54,6 +54,11 @@ Order matters: no refactoring before the implementation is proven and
 documented, because the step 5 suite is the safety net that makes
 refactoring cheap. Retrospectives stay unharvested until the owner asks.
 
+**Steps are planned one at a time.** Only step 3 is planned in detail.
+Each later step opens with a collaborative planning session with the
+owner (a `gate` bead every child depends on); the beads under steps 4 to
+7 today are sketches labelled `sketch` and are not the plan.
+
 ## Definition of "feature complete" (step 3 exit)
 
 Owner's words: *all open issues that do not involve new features are
