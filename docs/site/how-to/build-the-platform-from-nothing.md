@@ -1,167 +1,254 @@
 ---
-status: contract
+status: stable
 ---
 
 # Build the platform from nothing
 
-Take a fresh AWS account and the platform repository to a running,
-verified platform. The owner is a user, and this is the platform's
-most fundamental user-facing operation: "working" is a property of the
-repository, and this page is the procedure that proves it — no AI
-tooling, no CI internals, just an operator with credentials and a
-checkout.
+Take a fresh AWS account and this repository to a running, verified
+platform. The build is **four operator actions**: two "Run workflow"
+clicks in GitHub Actions, then two deliberate syncs of the two gate
+Applications. Everything between and after those four actions is the
+platform reconciling itself.
 
-!!! info "Why this page is `contract`, and what flips it"
-    The platform rebuilds itself from this repository routinely — but
-    through its CI apparatus, which auto-wires credentials and state.
-    The **human-executed** path below is assembled from the committed
-    sources (each step cites them) and has not yet been run end-to-end
-    by a person. That is a registered platform gap; the run that
-    executes this page as written on a fresh account is the evidence
-    that flips it `stable`. Where the human path diverges from what
-    the machinery does, the step says so.
+This is the supported path, and the only one the platform has ever been
+built by.
+
+!!! success "What this page is, and what it is not"
+    Every clean build of this platform to date used exactly the
+    procedure below: the `Terraform Test` workflow for the two
+    imperative layers, then the two gate syncs. There is **no CLI and
+    no single build script** — `scripts/` holds read-only diagnostics.
+
+    Two honest caveats. The workflow runs to date were started through
+    the GitHub API rather than the web form; the form sends the same
+    dispatch with the same two inputs, but nobody has yet clicked it.
+    And a
+    [workstation Terraform runbook](build-the-platform-on-a-workstation.md)
+    also exists — it has never been executed by a person and is
+    published as an unverified alternative, not as the way to build.
 
 ## Before you start
 
-- An AWS account with administrator-grade credentials in your
-  environment, in a supported region (`us-east-1` by default).
-- A **domain with a Route53 hosted zone**. The platform discovers the
-  zone; it does not create your domain. (On sandbox accounts with a
-  pre-created zone, you will supply its zone ID below.)
-- An **S3 bucket and DynamoDB lock table for Terraform state**, which
-  you create or choose — state lives outside the platform by design so
-  the management layer can always be rebuilt or recovered.
-- CLI tools: `terraform` (≥ 1.6), `kubectl`, `helm`, `aws`, `argocd`,
-  `git`, `curl`.
-- A clone of the platform repository, on `main`.
+| You need | Why | Where it comes from |
+|---|---|---|
+| Permission to run workflows in the repository | The build is a `workflow_dispatch` | Repository access |
+| AWS credentials stored as repository secrets — `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | The workflow applies Terraform with them | You set them once per account |
+| A **public Route53 hosted zone** in the account | The platform discovers your domain from it; it never creates your domain | You (or the account) create it |
+| Network access to the Kubernetes API of the management cluster, plus `kubectl` | The two gate syncs happen against the cluster | Your own VPN or VPC access into the base VPC |
 
-## 1. Base environment (`terraform/base`)
+Nothing else is prepared by hand. In particular you do **not** create a
+state bucket, write a `terraform.tfvars`, or choose a domain: the
+workflow bootstraps the Terraform state bucket and lock table from the
+account ID, discovers the hosted zone and derives the domain from it,
+and generates the Cognito test user's credentials fresh on every run so
+they are never committed.
 
-Networking, DNS wiring, and the identity substrate.
+## The shape of the build
 
-```bash
-cd terraform/base
-cp terraform.tfvars.example terraform.tfvars
-# edit: domain, aws_region, availability_zones,
-#       route53_zone_id (sandbox accounts), cognito test user
-terraform init \
-  -backend-config="bucket=<your-state-bucket>" \
-  -backend-config="key=base/terraform.tfstate" \
-  -backend-config="region=<region>" \
-  -backend-config="dynamodb_table=<your-lock-table>"
-terraform plan
-terraform apply
+```mermaid
+flowchart TD
+    B[Run 1 · phase=base] --> M[Run 2 · phase=management]
+    M --> G1[Sync gate · platform-cluster-claim]
+    G1 --> G2[Sync gate · spoke-access]
+    G2 --> F[Add-on stack fans out automatically]
+    F --> V[Verify: hello endpoint + inventory]
 ```
 
-Never commit `terraform.tfvars` — every account-specific value stays
-out of Git.
+The two runs are imperative and ordered — management reads base's
+remote state. From the moment the bootstrap Application exists,
+everything else is GitOps: the two gates are the only places the
+platform waits for a human, and they wait on purpose, because each one
+brings real billed infrastructure into existence.
 
-## 2. Management cluster (`terraform/management`)
+| Stage | Your action | How you know it passed |
+|---|---|---|
+| Base | Run the workflow with `phase=base`, `action=apply-and-verify` | Run conclusion green, with `[base] e2e-verify` reporting the wildcard certificate `ISSUED`, the Cognito user pool reachable, and the test user present |
+| Management | Run the workflow with `phase=management`, `action=apply-and-verify` | Run conclusion green, with `[management] e2e-verify` reporting the hub cluster `ACTIVE`, at least one Ready node, a Running pod in each of `argocd`, `crossplane-system`, `external-dns`, `external-secrets`, `ingress-nginx`, the Argo CD IRSA annotation, and the Argo CD ingress host |
+| Gate 1 | Sync `platform-cluster-claim` | The platform-cluster XR publishes its four status facts, and the node group reports Ready |
+| Gate 2 | Sync `spoke-access` | A spoke registration Secret appears in `argocd` on the hub, and the XR reaches Ready |
+| Fan-out | none | Per-spoke Applications appear and go Synced/Healthy |
+| Done | One `curl` | HTTP 200 over a valid public certificate |
 
-The hub: EKS plus the GitOps controller and the infrastructure engine,
-and the **last step you perform imperatively**.
+## 1. Run the base layer
 
-```bash
-cd terraform/management
-cp terraform.tfvars.example terraform.tfvars
-# edit: domain (must match base), cluster sizing,
-#       tf_state_bucket; leave the pinned chart versions alone
-terraform init \
-  -backend-config="bucket=<your-state-bucket>" \
-  -backend-config="key=management/terraform.tfstate" \
-  -backend-config="region=<region>" \
-  -backend-config="dynamodb_table=<your-lock-table>"
-terraform plan
-terraform apply
-```
+In GitHub, open **Actions → Terraform Test → Run workflow**, and choose:
 
-This installs Argo CD, Crossplane, and the secrets operator on the new
-cluster and applies the single bootstrap Application. From here on,
-**everything is GitOps**: the bootstrap app syncs the repository's
-`argocd/` tree — projects, composite definitions, compositions, and
-every child Application — continuously from `main`.
+- **phase**: `base`
+- **action**: `apply-and-verify`
 
-Get credentials and watch it converge:
+Base builds the networking, DNS wiring, and the identity substrate.
+The run bootstraps the Terraform state backend first (an S3 bucket
+named after the account ID plus a DynamoDB lock table), then applies
+and verifies.
+
+Green means the whole run succeeded *and* the `[base] e2e-verify` step
+printed its `OK:` lines. The workflow also posts a summary comment on
+the commit (or the pull request, when the dispatch ref has one) listing
+every step's outcome with log excerpts, so a failure does not require
+reading the raw log first.
+
+If the run fails because no public hosted zone exists, that is the
+expected hard failure: create the zone and run it again.
+
+## 2. Run the management layer
+
+Same form, with:
+
+- **phase**: `management`
+- **action**: `apply-and-verify`
+
+This creates the hub: the `k8-platform-mgmt` EKS cluster, Argo CD,
+Crossplane, the secrets operator, and the single bootstrap
+Application. It is the **last imperative step of the build**. Once the
+bootstrap Application exists, Argo CD syncs this repository's
+`argocd/` tree — projects, composite resource definitions,
+compositions, and every child Application — continuously.
+
+Green means the run succeeded and `[management] e2e-verify` printed its
+`OK:` lines. One step inside it, `[management] argocd-url`, waits for
+the DNS record and the load balancer and is deliberately allowed to
+fail without failing the run — DNS and the load balancer often settle
+after the run ends. When it does succeed it prints the Argo CD URL,
+which is `https://argocd.management.<domain>`.
+
+## 3. Get cluster access for the gates
+
+The two gates are operator actions against the hub's Kubernetes API,
+so you need a kubeconfig for it:
 
 ```bash
 aws eks update-kubeconfig --name k8-platform-mgmt --region <region>
-kubectl get applications -n argocd        # children appear and converge
+kubectl get applications -n argocd
 ```
 
-The Argo CD UI comes up at `https://argocd.management.<domain>`
-(admin credentials are exposed as Terraform outputs — read them with
-`terraform output`, never from cluster secrets).
+You should see the bootstrap Application and its children, with
+`platform-cluster-claim` and `spoke-access` present and **OutOfSync** —
+that is the gates waiting for you, not a defect.
 
-## 3. Pull the two deliberate gates
+!!! note "Argo CD sign-in, if you want the UI"
+    The Argo CD admin URL and password are outputs of the management
+    Terraform module (`argocd_url`, `argocd_admin_password`), read with
+    `terraform output` against the shared state backend — never from
+    the cluster's initial-admin Secret. Obtaining them from a
+    workstation is an administrator task this documentation does not
+    yet cover end to end; the `kubectl` form below needs only the
+    kubeconfig you just wrote.
 
-Cluster creation is intentionally **not** automatic: two Applications
-are committed without automated sync, so bringing real infrastructure
-into existence is an explicit operator act.
+## 4. Gate 1 — create the platform services cluster
 
-Do **not** wait for the composite cluster resource to become `Ready`
-between the two gates. Its composed EKS identity-provider association
-validates the platform's own Keycloak issuer, and Keycloak only deploys
-after the second gate registers the spoke, so waiting for `Ready` first
-deadlocks a fresh build. The second gate consumes the cluster's
-*published facts* (four status fields the spoke-access composition
-observes) and needs a node group that can run workloads; wait for
-those instead.
+Sync the first gate. Either form works; the `kubectl` form is the one
+used on clean builds, and it needs nothing but your kubeconfig:
 
 ```bash
-# 1. Create the platform services cluster (expect ~15-20 minutes):
-argocd app sync platform-cluster-claim
+kubectl -n argocd patch application platform-cluster-claim --type merge \
+  -p '{"operation":{"sync":{"revision":"main"}}}'
+```
 
-#    Wait for the facts the second gate consumes, not for Ready:
+```bash
+# Equivalent, if you have the Argo CD CLI logged in — or click Sync in the UI:
+argocd app sync platform-cluster-claim
+```
+
+Then wait for the **published facts**, not for the XR to become Ready:
+
+```bash
 for fact in oidcIssuer endpoint clusterCaData certificateArn; do
   kubectl wait --for=jsonpath="{.status.${fact}}" --timeout=1500s \
     xplatformclusters -A --all
 done
 kubectl wait --for=condition=Ready --timeout=1500s \
   nodegroups.eks.aws.m.upbound.io -A --all
+```
 
-# 2. Register the new spoke with the hub:
-argocd app sync spoke-access
+!!! warning "Do not wait for the composite resource to become Ready here"
+    The platform-cluster XR composes an EKS identity-provider
+    association that validates the platform's own Keycloak issuer, and
+    Keycloak only deploys after gate 2 registers the spoke. Waiting for
+    `Ready` before gate 2 deadlocks a fresh build. The second gate
+    consumes the four status facts above, so those — plus a node group
+    that can run workloads — are what you wait for.
 
-# 3. The composite reaches Ready once the add-on stack (Keycloak
-#    included) has converged and the identity-provider association
-#    validates; expect roughly the stack's rollout time:
+Cluster creation is the longest wait in the build; the timeouts above
+are sized for it. If it overruns them, trace the XR rather than syncing
+again or deleting anything.
+
+## 5. Gate 2 — register the spoke with the hub
+
+```bash
+kubectl -n argocd patch application spoke-access --type merge \
+  -p '{"operation":{"sync":{"revision":"main"}}}'
+```
+
+This creates the access path the hub and the spoke add-ons use against
+the new cluster. Shortly after the sync, a spoke registration Secret
+appears in namespace `argocd` on the hub; that Secret is what makes the
+new cluster visible to Argo CD. It is written complete or not at all —
+a partial one is a defect to file, never a wait state.
+
+Now the XR reaching Ready is the right thing to wait for:
+
+```bash
 kubectl wait --for=condition=Ready --timeout=2400s \
   xplatformclusters -A --all
 ```
 
-Once the spoke registers, the cluster-fact-driven ApplicationSets fan
-the add-on stack out to it automatically — ingress, DNS, secrets,
-SSO components, the demo app — in dependency order. No further
+On a fresh build, the identity-provider association retries until
+Keycloak's issuer is serving. That retry loop is expected, not a
+failure.
+
+Once the spoke is registered, the fact-driven ApplicationSets fan the
+add-on stack out to it automatically — ingress, DNS, secrets, SSO
+components, the demo app — in dependency order. There are no further
 commands.
 
-## 4. Verify you are done
-
-The platform's own definition of done, as observables:
+## 6. Verify you are done
 
 ```bash
-# The behavioral gate — a real hostname, a valid public certificate:
+# The behavioral gate — a real hostname with a valid public certificate:
 curl -sSf https://hello.platform.<domain>
 
-# The delivery surface — everything Synced/Healthy:
+# The delivery surface:
 kubectl get applications -n argocd
 ```
 
-Check the full sweep against
-[What a finished platform contains](../reference/finished-platform.md)
-— including the items that are expectedly *not* green today. Anything
-absent from that inventory, or off-state without a listed reason, is a
-defect to file.
+Then sweep the result against
+[What a finished platform contains](../reference/finished-platform.md),
+which lists the expected state of every Application and composite
+resource — *including* the handful that are expectedly not green on a
+fresh build. Anything absent from that inventory, or off-state without
+a listed reason there, is a defect worth filing.
 
-## Known divergences from the machinery's path
+## When something fails
 
-Stated so you are never surprised mid-build:
+- **Read the failed run's summary comment or log before changing
+  anything.** The verify steps print the specific assertion that
+  failed.
+- **Re-run the same dispatch rather than reaching into AWS or the
+  cluster by hand.** A hand-patched resource makes the next build's
+  result meaningless; the platform's own rule is that a build with
+  manual steps is not evidence of anything.
+- `action=apply-and-verify` is safe to repeat: Terraform converges, and
+  the verify steps re-assert the same facts.
+- `action=verify` re-runs only the checks, against whatever is already
+  applied.
+- One run per branch and phase executes at a time; a second dispatch
+  queues rather than interrupting the first. Never cancel a run
+  mid-apply — it leaves a held state lock and half-applied resources.
 
-- The platform's CI derives its state-backend names and credentials
-  automatically; you supplied yours by hand above. The Terraform
-  *content* is identical.
-- The two manual syncs in step 3 are the same gates the machinery
-  pulls — they are the product behaving as designed, not a workaround.
-- Two components are expected non-green on a fresh build (observability
-  storage, the second workload cluster) — the
-  [inventory page](../reference/finished-platform.md) lists them with
-  reasons.
+## Why the build looks like this
+
+Two of these four actions are gates by design, and two are imperative
+by necessity:
+
+| Action | Why it is a human action |
+|---|---|
+| Base apply | Nothing exists yet to reconcile it — this is the bottom turtle |
+| Management apply | It creates the GitOps controller itself, so it cannot be GitOps |
+| `platform-cluster-claim` sync | Synchronizing it provisions a real EKS cluster; auto-sync would mean a typo fix starts a cluster |
+| `spoke-access` sync | It grants real AWS access and must observe the cluster's published facts, so auto-sync would race the provision |
+
+---
+
+*Tracking: bead `kp-2al.15` (this page's declaration of the supported
+path), `OI-2026-07-06-4` (no human-executed bring-up yet), ADR-0017
+(bring-up is a user-facing product surface).*

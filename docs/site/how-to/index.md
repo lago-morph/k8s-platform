@@ -15,8 +15,12 @@ verify the result.
 In the order a new tenant tends to need them:
 
 - [Build the platform from nothing](build-the-platform-from-nothing.md)
-  — the owner's guide: fresh account + this repository → running
-  platform (`contract` until a human-executed run proves it)
+  — the owner's guide and the **supported build path**: fresh account +
+  this repository → running platform, via two workflow runs and the two
+  gate syncs
+- [Build the platform from a workstation](build-the-platform-on-a-workstation.md)
+  — the copy/paste Terraform alternative; published, but never executed
+  by a person and therefore unverified
 - [Onboard a tenant](onboard-a-tenant.md) — documented as-is,
   including the operator hand-work
 - [Deploy an application via GitOps](deploy-an-application.md)

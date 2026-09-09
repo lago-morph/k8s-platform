@@ -90,6 +90,7 @@ nav:
   - How-to guides:
       - how-to/index.md
       - Build the platform from nothing: how-to/build-the-platform-from-nothing.md
+      - Build from a workstation (unverified): how-to/build-the-platform-on-a-workstation.md
       - Onboard a tenant: how-to/onboard-a-tenant.md
       - Deploy an application: how-to/deploy-an-application.md
       - Expose an application: how-to/expose-an-application.md
