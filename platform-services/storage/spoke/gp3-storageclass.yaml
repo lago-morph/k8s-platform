@@ -1,0 +1,42 @@
+# Default StorageClass for every spoke cluster (kp-2al.4 / OI-2026-06-11-3).
+#
+# WHY THIS FILE EXISTS. EKS ships one StorageClass, `gp2`, and it is NOT
+# marked default. The observability charts (kube-prometheus-stack, loki) set
+# no storageClassName on their volumeClaimTemplates, so with no default class
+# their PVCs are created with an EMPTY class and never bind — observed live on
+# build #6: three PVCs Pending in `monitoring`, STORAGECLASS column blank.
+# Marking a class default is what binds them; the aws-ebs-csi-driver addon
+# composed by XSpokeAccess is what then actually provisions the volume.
+#
+# gp3 over gp2 deliberately: gp3 gives a fixed 3000 IOPS / 125 MiB/s floor
+# independent of volume size, so a 2Gi alertmanager volume is not throttled to
+# 6 IOPS the way a size-proportional gp2 volume is. Cheaper per GiB too.
+#
+# The stock `gp2` class is left in place and left non-default: it uses the
+# in-tree kubernetes.io/aws-ebs provisioner and is not removable (EKS
+# re-creates it), so the only safe move is to add a default beside it.
+#
+# Delivered by argocd/apps/spoke/storage.yaml (ApplicationSet, in-repo path
+# source) — the same route the ESO ClusterSecretStore takes to a spoke. The
+# kind is CLUSTER-scoped, so argocd/projects/platform-spoke.yaml must
+# whitelist it (see the IngressClass note there).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    # The whole point of the file.
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  fsType: ext4
+# The nodegroup spans AZs. Immediate binding would create the volume in an AZ
+# chosen before the pod is scheduled, which strands the pod when the scheduler
+# picks a different AZ — a Pending that looks exactly like the bug this fixes.
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+# Demo platform, intentionally ephemeral (AGENTS "what this repo is"): a
+# retained volume after a teardown is an orphaned cost, not a safety net.
+reclaimPolicy: Delete

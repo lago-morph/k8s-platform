@@ -67,6 +67,13 @@ echo "live suite identity: $(aws sts get-caller-identity --query Arn --output te
 # That policy takes effect on `terraform apply`; until applied, the acm/iam/
 # route53 checks SKIP under the scoped role and this producer goes RED. Sequence:
 # merge -> terraform apply (mgmt) -> dispatch live-verify -> GREEN.
+#
+# kp-2al.4 adds eks.aws.m.upbound.io/Addon (the spoke aws-ebs-csi-driver) to
+# the list below. Same sequence applies twice over: the scoped role needs
+# eks:DescribeAddon/ListAddons (terraform apply), and the addon itself only
+# exists after a clean build re-renders XSpokeAccess. Until both, the Addon
+# check SKIPs and this producer is correctly RED — the addon is declared in
+# git, so an absent one is a real expect-full violation, not a green.
 export LIVE_EXPECT_FULL="rds.aws.m.upbound.io/Instance
 secretsmanager.aws.m.upbound.io/Secret
 iam.aws.m.upbound.io/OpenIDConnectProvider
@@ -77,6 +84,7 @@ eks.aws.m.upbound.io/Cluster
 eks.aws.m.upbound.io/NodeGroup
 eks.aws.m.upbound.io/AccessEntry
 eks.aws.m.upbound.io/AccessPolicyAssociation
+eks.aws.m.upbound.io/Addon
 iam.aws.m.upbound.io/Role
 iam.aws.m.upbound.io/RolePolicyAttachment
 route53.aws.m.upbound.io/Record"

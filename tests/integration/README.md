@@ -24,10 +24,13 @@ below is how I'd reach for them when something specific breaks.
 | 04 | `04_eso_secret_round_trip.sh` | Write to Secrets Manager → ESO materializes a k8s Secret | ESO IRSA, ClusterSecretStore config, secret-name format |
 | 05 | `05_crossplane_managed_resource.sh` | Apply a raw Crossplane MR (S3 Bucket), assert Ready + bucket exists | Crossplane AWS provider package missing, runtimeConfig SA wrong, IAM gap |
 | 06 | `06_crossplane_xrd_claim.sh` | XRD + Composition + Claim → composite Ready + bucket exists | Composition syntax, patches, composite-resource generation |
-| 07 | `07_kyverno_audit_policy.sh` | Create a deliberately-bad SA → PolicyReport shows the violation | Kyverno reports broken, policy not loaded |
 | 08 | `08_irsa_sts_round_trip.sh` | Run a pod with an IRSA-annotated SA, call sts:GetCallerIdentity, assert the assumed-role ARN matches | IRSA assume-role failing silently, OIDC provider broken, SA→role binding wrong |
 | 09 | `09_secondary_ingress.sh` | Deploy a second app behind a different hostname; full DNS + HTTP path | external-dns ignoring non-argocd Ingresses, ingress class registry failure |
 | 10 | `10_argocd_gitops_loop.sh` | Modify a manifest in the Application's repo; assert Argo auto-syncs | Argo repo polling, automated sync policy, drift detection |
+
+`07_kyverno_audit_policy.sh` was removed with the hub Kyverno install
+(bead kp-2al.17); the numbering is left as-is. Reinstatement is kp-caz.1
+(v2.0) — see `policies/README.md`.
 
 ## Running
 

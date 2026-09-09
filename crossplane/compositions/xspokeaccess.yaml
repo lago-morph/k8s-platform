@@ -24,6 +24,15 @@
 #      shape, :sub = system:serviceaccount:external-secrets:external-secrets;
 #      ASM read scoped to k8-platform/* in this account+region (ADR-0005
 #      ESO-baseline; ARN rides the contract as k8-platform.io/eso-role-arn).
+#   2c. aws-ebs-csi-driver IAM Role + AWS-MANAGED policy attachment
+#      (AmazonEBSCSIDriverPolicy, so a RolePolicyAttachment rather than an
+#      inline RolePolicy — there is no custom document to author) + the
+#      managed EKS Addon itself, wired serviceAccountRoleArn := that Role.
+#      Same trust shape; :sub = system:serviceaccount:kube-system:
+#      ebs-csi-controller-sa (the SA the addon creates, not ours to name).
+#      kp-2al.4 / OI-2026-06-11-3: without the driver AND without a default
+#      StorageClass (delivered by argocd/apps/spoke/storage.yaml) every
+#      spoke observability PVC stays Pending forever.
 #   3. EKS AccessEntry + AccessPolicyAssociation (auto-008 C3) mapping the
 #      management cluster's ${clusterName}-argocd IAM role (the FULL ARN
 #      from the EnvironmentConfig) to AmazonEKSClusterAdminPolicy on the
@@ -522,6 +531,170 @@ spec:
                         }]
                       }
                 toFieldPath: spec.forProvider.policy
+
+
+          # ---------- 3d. EBS CSI driver IRSA Role -------------------
+          # OI-2026-06-11-3 / kp-2al.4: a spoke shipped no CSI driver and
+          # no default StorageClass, so every observability PVC
+          # (prometheus, alertmanager, loki) stayed Pending forever.
+          # The durable fix is the managed aws-ebs-csi-driver EKS addon
+          # (3f) running under IRSA — this Role — plus the default gp3
+          # StorageClass delivered by the `storage` ApplicationSet
+          # (argocd/apps/spoke/storage.yaml).
+          #
+          # Same trust shape as external-dns/ESO above (StringEquals on
+          # BOTH :sub and :aud — auto-008 S2, never StringLike), assembled
+          # from the environment (accountId + oidcHost) so no account-
+          # ephemeral literal is committed. The subject is NOT ours to
+          # choose: the EKS addon creates its own service account
+          # kube-system/ebs-csi-controller-sa, so that exact :sub is what
+          # AssumeRoleWithWebIdentity presents.
+          - name: ebs-csi-role
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: Role
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-ebs-csi-role
+              spec:
+                forProvider:
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.annotations[crossplane.io/external-name]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-ebs-csi"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.tags.ClusterName
+              # Required: never create an IAM Role with an empty trust
+              # policy — wait for the observed issuer (same as 2 / 3b).
+              - type: CombineFromEnvironment
+                policy:
+                  fromFieldPath: Required
+                combine:
+                  variables:
+                    - fromFieldPath: accountId
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                    - fromFieldPath: oidcHost
+                  strategy: string
+                  string:
+                    fmt: |
+                      {
+                        "Version": "2012-10-17",
+                        "Statement": [{
+                          "Effect": "Allow",
+                          "Principal": {"Federated": "arn:aws:iam::%s:oidc-provider/%s"},
+                          "Action": "sts:AssumeRoleWithWebIdentity",
+                          "Condition": {"StringEquals": {
+                            "%s:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa",
+                            "%s:aud": "sts.amazonaws.com"
+                          }}
+                        }]
+                      }
+                toFieldPath: spec.forProvider.assumeRolePolicy
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.arn
+                toFieldPath: status.ebsCsiRoleArn
+            readinessChecks:
+              - type: NonEmpty
+                fieldPath: status.atProvider.arn
+
+          # ---------- 3e. EBS CSI managed-policy attachment ----------
+          # AmazonEBSCSIDriverPolicy is an AWS-MANAGED policy, so this is
+          # a RolePolicyAttachment (iam:AttachRolePolicy — granted by the
+          # IAMRoles Sid in terraform/management/irsa.tf, scoped to
+          # role/k8-platform-*), following the platform-cluster
+          # node-worker/cni/ecr precedent. The inline-RolePolicy idiom
+          # used by external-dns/ESO above exists only because THOSE need
+          # CUSTOM documents and the crossplane IRSA lacks
+          # iam:CreatePolicy; there is no custom document to author here.
+          - name: ebs-csi-policy-attachment
+            base:
+              apiVersion: iam.aws.m.upbound.io/v1beta1
+              kind: RolePolicyAttachment
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-ebs-csi-policy-attachment
+              spec:
+                forProvider:
+                  policyArn: arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.role
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "k8-platform-%s-ebs-csi"
+
+          # ---------- 3f. aws-ebs-csi-driver EKS Addon ---------------
+          # The managed addon installs ebs.csi.aws.com on the SPOKE (the
+          # spoke's kube-system), which is what actually provisions the
+          # EBS volumes the gp3 StorageClass names. serviceAccountRoleArn
+          # is the Role above, patched Required: an addon created before
+          # the ARN resolves would run with the node role's permissions
+          # and fail CreateVolume with AccessDenied — i.e. the same
+          # Pending PVCs this bead fixes, but silently.
+          # resolveConflictsOnCreate OVERWRITE lets the managed addon
+          # adopt any pre-existing self-managed driver objects (same
+          # reasoning as the hub's vpc-cni addon, terraform eks.tf).
+          - name: ebs-csi-addon
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: Addon
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: spoke-ebs-csi-addon
+              spec:
+                forProvider:
+                  region: us-east-1
+                  addonName: aws-ebs-csi-driver
+                  resolveConflictsOnCreate: OVERWRITE
+                  resolveConflictsOnUpdate: OVERWRITE
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: XSpokeAccess
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.clusterName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.ebsCsiRoleArn
+                toFieldPath: spec.forProvider.serviceAccountRoleArn
+                policy:
+                  fromFieldPath: Required
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
 
           # ---------- 4. EKS AccessEntry ----------------------------
           # Maps the management cluster's ${clusterName}-argocd IAM role

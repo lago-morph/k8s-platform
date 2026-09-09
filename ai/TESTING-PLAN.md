@@ -6,12 +6,15 @@ different environment and catches a different class of bug.
 | Layer | Lives at | Runs against | Catches | Cost per run |
 |---|---|---|---|---|
 | Unit | `tests/unit/` | Local shell — no AWS, no cluster | Helm chart value contracts, IRSA wiring, IAM-policy completeness, EKS module tripwires | <30s |
-| Kyverno (audit) | `policies/audit/` | Continuously, in-cluster | Drift from any source — chart bump, hand edit, Argo sync, new namespace | continuous |
+| ~~Kyverno (audit)~~ | `policies/` | **Dormant — not installed** | (was: drift from any source — chart bump, hand edit, Argo sync, new namespace) | n/a |
 | Integration | `tests/integration/` | Live management cluster + AWS | Real end-to-end flows — IRSA STS, ExternalDNS → Route53, Crossplane → S3, Argo selfHeal | ~10–15 min for all 10 |
 | Chainsaw (planned) | `tests/chainsaw/` | `kind` cluster ± LocalStack | XRD / Composition / Claim logic before any AWS apply | <2 min per scenario |
 
 The matrix is intentionally non-overlapping. Unit tests catch authoring-time
-mistakes. Kyverno watches runtime drift. Integration tests catch
+mistakes. The Kyverno drift layer is dormant: the hub install was removed
+(bead kp-2al.17, reinstatement kp-caz.1/v2.0) and the policy manifests are
+kept unapplied under `policies/` — see `policies/README.md`. Integration
+tests catch
 real-cloud failures. Chainsaw will catch Crossplane logic bugs in seconds
 instead of waiting for the 15-minute management apply.
 

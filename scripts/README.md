@@ -21,8 +21,8 @@ All scripts:
 | `k8s-status.sh` | Overall snapshot: nodes, namespaces, pod summary per ns. |
 | `k8s-logs.sh` | Pull recent logs for a labelled deployment. |
 | `diag-component.sh` | All-in-one dump for one of our components (argocd, external-dns, etc.) — pods, logs, events, the helm release row. |
-| `kyverno-policies.sh` | List installed ClusterPolicies and their mode. |
-| `kyverno-violations.sh` | Current PolicyReport violations across all namespaces. |
+| `kyverno-policies.sh` | List ClusterPolicies and their mode. **Dormant** — the hub Kyverno install was removed (bead kp-2al.17); reinstatement is kp-caz.1 (v2.0). |
+| `kyverno-violations.sh` | PolicyReport violations across all namespaces. **Dormant** — see above. |
 | `argocd-apps.sh` | ArgoCD Application/AppProject status. |
 | `route53-records.sh` | List record sets in the discovered hosted zone. |
 | `aws-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
@@ -37,7 +37,7 @@ and `crossplane-trace.sh`.
 ## Conventions
 
 - Component names used by `diag-component.sh`: `argocd`, `crossplane`,
-  `external-dns`, `eso`, `ingress-nginx`, `kyverno`.
+  `external-dns`, `eso`, `ingress-nginx`.
 - `k8s-logs.sh` accepts `<namespace> [<label-selector>]`. Default selector
   is `app.kubernetes.io/component=controller` if you omit it.
 - All scripts honor `--help` and print a one-paragraph synopsis.

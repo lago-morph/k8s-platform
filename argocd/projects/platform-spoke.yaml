@@ -91,6 +91,13 @@ spec:
     # namespaced external-secrets.io/* whitelist below does NOT cover it.
     - group: "external-secrets.io"
       kind: "ClusterSecretStore"
+    # StorageClass is CLUSTER-scoped; the storage ApplicationSet delivers the
+    # spoke's default gp3 class (kp-2al.4 / OI-2026-06-11-3). Same fail-closed
+    # trap as IngressClass above: without this entry the sync is rejected
+    # ("resource storage.k8s.io:StorageClass is not permitted in project
+    # platform-spoke") and every observability PVC stays Pending.
+    - group: "storage.k8s.io"
+      kind: "StorageClass"
   namespaceResourceWhitelist:
     - group: ""
       kind: "*"

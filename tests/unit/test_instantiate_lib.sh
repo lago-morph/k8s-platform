@@ -10,7 +10,9 @@
 #       (live-verify=<RUN_ID> + live-verify-created=<epoch>) AND the scoped
 #       naming (k8-platform-live-verify-* role / k8-platform/live-verify-* secret);
 #   (c) the cleanup DELETE is ALWAYS issued — even when verify FAILS;
-#   (d) `covers <kind>` is emitted ONLY on a verified success.
+#   (d) `covers <kind>` is emitted ONLY on a verified success;
+#   (e) a convergence TIMEOUT logs the provider's own Synced condition + events
+#       (kp-7ei: without them the only recovery route was CloudTrail).
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -46,7 +48,8 @@ case " $* " in
   *" delete "*)     exit 0 ;;
   *" get "*)
     case " $* " in
-      *" -o "*jsonpath*) echo "True"; exit 0 ;;   # condition probe => Ready/Synced
+      *" events "*) [ -n "${FAKE_EVENTS:-}" ] && echo "$FAKE_EVENTS"; exit 0 ;;
+      *" -o "*jsonpath*) echo "${FAKE_CONDITION:-True}"; exit 0 ;;  # condition probe
       *) exit 1 ;;                                  # bare get => absent (delete settled)
     esac ;;
 esac
@@ -122,8 +125,19 @@ run_check "$SECRET_CHECK" mutating
 SECRET_MANIFEST="$(cat "$MANIFEST")"
 assert_contains "secret: live-verify tag = RUN_ID"        "live-verify: \"$FAKE_RUNID\""          "$SECRET_MANIFEST"
 assert_contains "secret: live-verify-created tag = epoch" "live-verify-created: \"$FAKE_EPOCH\""  "$SECRET_MANIFEST"
-assert_contains "secret: external-name is k8-platform/live-verify-<RUN_ID>" \
-  "crossplane.io/external-name: k8-platform/live-verify-$FAKE_RUNID" "$SECRET_MANIFEST"
+# kp-7ei: for aws_secretsmanager_secret the Terraform ID is the ARN, so upjet
+# treats crossplane.io/external-name as PROVIDER-assigned — the annotation does
+# not seed the AWS name and the provider asks for `terraform-<timestamp>`, which
+# the scoped IAM policy (secretsmanager:* on secret:k8-platform/*) denies. The
+# naming lever is spec.forProvider.name, exactly as
+# crossplane/compositions/platform-secret.yaml patches it.
+assert_eq "secret: manifest carries a spec.forProvider name key (not just an annotation)" "true" \
+  "$(printf '%s\n' "$SECRET_MANIFEST" | grep -qE '^[[:space:]]+name:[[:space:]]*k8-platform/' && echo true || echo false)"
+SECRET_ASM_NAME="$(printf '%s\n' "$SECRET_MANIFEST" | sed -n 's/^[[:space:]]*name:[[:space:]]*\(k8-platform\/.*\)$/\1/p' | head -n1)"
+assert_eq "secret: the rendered ASM name sits inside the IAM-allowed k8-platform/ prefix" \
+  "k8-platform/live-verify-$FAKE_RUNID" "$SECRET_ASM_NAME"
+assert_eq "secret: no inert external-name annotation (provider-assigned kind)" "true" \
+  "$(printf '%s' "$SECRET_MANIFEST" | grep -q 'crossplane.io/external-name' && echo false || echo true)"
 assert_contains "secret: recoveryWindowInDays=0 (immediate delete)" "recoveryWindowInDays: 0" "$SECRET_MANIFEST"
 assert_contains "secret: is a secretsmanager Secret MR" "kind: Secret" "$SECRET_MANIFEST"
 
@@ -194,5 +208,30 @@ assert_contains "verify-fail: NO covers emitted" "true" \
 assert_contains "verify-fail: engine reports the verify failure" "did not verify" "$ENGINE_OUT"
 assert_contains "verify-fail: cleanup delete WAS issued (trap fired)" \
   "delete widget.example.test live-verify-widget-$FAKE_RUNID" "$(cat "$REC")"
+
+# ── (e) a convergence timeout dumps the provider's OWN error ──────────────
+# kp-7ei: the harness said only "never reached Synced=True" while the provider
+# was being denied CreateSecret for a mis-named secret — a whole 300s window of
+# AccessDenied that took CloudTrail to recover. The Synced condition and the
+# recent events must land in the log at the moment the harness gives up.
+echo ""
+echo "── (e) converge timeout => Synced condition + events logged ───"
+: > "$REC"; : > "$MANIFEST"
+TIMEOUT_OUT="$(
+  set +e
+  env PATH="$BIN:$PATH" REC="$REC" MANIFEST="$MANIFEST" \
+      RUN_ID="$FAKE_RUNID" FAKE_RUNID="$FAKE_RUNID" FAKE_EPOCH="$FAKE_EPOCH" \
+      IV_FAKE_EPOCH="$FAKE_EPOCH" IV_DIRECT_KUBECTL=1 \
+      IV_CONVERGE_TIMEOUT=0 IV_CONVERGE_INTERVAL=0 IV_DELETE_TIMEOUT=0 IV_DELETE_INTERVAL=0 \
+      LIVE_MODE=mutating \
+      MR_KIND="widget.example.test" MR_NAME="live-verify-widget-$FAKE_RUNID" \
+      FAKE_CONDITION='{"type":"Synced","status":"False","reason":"ApplyFailure","message":"AccessDenied: not authorized to perform secretsmanager:CreateSecret"}' \
+      FAKE_EVENTS='2m Warning CannotCreateExternalResource widget/live-verify-widget AccessDenied' \
+    bash "$DRIVER"
+)"
+assert_contains "converge timeout: the provider's Synced message is logged" \
+  "AccessDenied: not authorized to perform secretsmanager:CreateSecret" "$TIMEOUT_OUT"
+assert_contains "converge timeout: the recent events are logged" \
+  "CannotCreateExternalResource" "$TIMEOUT_OUT"
 
 assert_summary

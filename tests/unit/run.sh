@@ -140,6 +140,7 @@ run_suite tests/unit/test_federation_oracle_logic.sh
 run_suite tests/unit/test_verifier_policy_covers_check_reads.sh
 # auto-008 phase-3 spoke GitOps access (XSpokeAccess XRD + Composition + XR)
 run_suite tests/unit/test_xspokeaccess.sh
+run_suite tests/unit/test_spoke_storage.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)
 run_suite tests/unit/test_coverage_deriver.sh
 run_suite tests/unit/test_live_orchestrator.sh

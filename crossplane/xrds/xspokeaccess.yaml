@@ -152,6 +152,15 @@ spec:
                   description: >-
                     ARN of the EKS AccessEntry mapping the argocd role to
                     the spoke, echoed for observability.
+                ebsCsiRoleArn:
+                  type: string
+                  description: >-
+                    ARN of the aws-ebs-csi-driver IRSA Role, consumed by the
+                    EBS CSI Addon's serviceAccountRoleArn so the driver can
+                    call CreateVolume/AttachVolume (kp-2al.4 /
+                    OI-2026-06-11-3). Cross-resource refs travel via the
+                    composite, so it is a status field, not a contract
+                    annotation — no spoke workload reads it.
                 # ---- cluster-facts mirrors (ADR-0010 PR-2) -------------
                 # Populated by the cluster-facts Observe Object from the
                 # paired XPlatformCluster's status; consumed by the

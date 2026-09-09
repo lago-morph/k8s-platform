@@ -1,0 +1,66 @@
+# ArgoCD ApplicationSet — the default gp3 StorageClass on every spoke cluster
+# (kp-2al.4 / OI-2026-06-11-3).
+#
+# The spoke's PERSISTENT-STORAGE half. The other half — the
+# aws-ebs-csi-driver EKS addon and its IRSA role — is composed by
+# crossplane/compositions/xspokeaccess.yaml, because an addon is an AWS
+# resource and IRSA needs the spoke's OIDC provider. What ArgoCD delivers is
+# the cluster-scoped Kubernetes object: a StorageClass named gp3, annotated
+# as the cluster default, pointing at the driver the addon installs.
+#
+# Both halves are required. Without the default class the observability PVCs
+# are created with no class and never bind; without the driver a class naming
+# ebs.csi.aws.com provisions nothing.
+#
+# Delivery mechanism follows the ESO ClusterSecretStore precedent
+# (argocd/apps/spoke/eso.yaml second source): a plain in-repo `path` source of
+# committed manifests, NOT a chart. There are no account-ephemeral values
+# here, so like observability-loki this template injects NO cluster facts.
+#
+# Wave 5: BEFORE eso (10), ingress/external-dns (20) and the observability
+# band (40) — the class must exist before anything creates a PVC.
+#
+# INERT until a labeled cluster Secret exists; producer = the xspokeaccess
+# Composition (ADR-0010 PR-2).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: storage
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            k8-platform.io/cluster-role: spoke
+  template:
+    metadata:
+      name: '{{index .metadata.labels "k8-platform.io/short-name"}}-storage'
+      annotations:
+        argocd.argoproj.io/sync-wave: "5"
+    spec:
+      project: platform-spoke
+      sources:
+        - repoURL: https://github.com/lago-morph/k8-platform.git
+          targetRevision: main
+          path: platform-services/storage/spoke
+      destination:
+        name: '{{.name}}'
+        # Cluster-scoped object; the namespace is the API-call default only.
+        namespace: kube-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

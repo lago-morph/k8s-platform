@@ -94,6 +94,19 @@ _iv_condition_true() {
   [ "$got" = "True" ]
 }
 
+# _iv_diagnose <kind> <name> — on a convergence timeout, put the PROVIDER's own
+# error in the log. Without it the harness reported only "never reached
+# Synced=True" and recovering the real cause (an IAM AccessDenied on a
+# mis-named secret) took CloudTrail archaeology (kp-7ei, build #6). Read-only,
+# through the same relay/direct seam; conditions carry no secret material.
+_iv_diagnose() {
+  local kind="$1" name="$2"
+  log "  $kind/$name Synced condition: $(_iv_kubectl get "$kind" "$name" \
+    -o "jsonpath={.status.conditions[?(@.type=='Synced')]}" 2>&1 | head -c 500)"
+  log "  $kind/$name recent events: $(_iv_kubectl get events \
+    --field-selector "involvedObject.name=$name" 2>&1 | tail -n 5 | tr '\n' '|')"
+}
+
 # _iv_absent <kind> <name> — true once the MR no longer exists (delete settled).
 _iv_absent() {
   local kind="$1" name="$2"
@@ -178,11 +191,13 @@ instantiate_and_verify() {
   if ! wait_for "$kind $mr_name Synced=True" "$IV_CONVERGE_TIMEOUT" "$IV_CONVERGE_INTERVAL" \
         -- _iv_condition_true Synced "$mr_kind" "$mr_name"; then
     ng "$kind: $mr_name never reached Synced=True within ${IV_CONVERGE_TIMEOUT}s (controller did not converge the create)"
+    _iv_diagnose "$mr_kind" "$mr_name"
     return 1
   fi
   if ! wait_for "$kind $mr_name Ready=True" "$IV_CONVERGE_TIMEOUT" "$IV_CONVERGE_INTERVAL" \
         -- _iv_condition_true Ready "$mr_kind" "$mr_name"; then
     ng "$kind: $mr_name never reached Ready=True within ${IV_CONVERGE_TIMEOUT}s"
+    _iv_diagnose "$mr_kind" "$mr_name"
     return 1
   fi
 

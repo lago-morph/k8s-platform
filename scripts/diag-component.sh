@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # All-in-one diagnostic dump for one of our managed components.
 # Usage: scripts/diag-component.sh <component> [<claim-namespace> <claim-name>]
-# Components: argocd | crossplane | external-dns | eso | ingress-nginx | kyverno | platform-secret
+# Components: argocd | crossplane | external-dns | eso | ingress-nginx | platform-secret
 
 set -uo pipefail
 
@@ -9,7 +9,7 @@ usage() {
   sed -n '2,5p' "$0"
   echo ""
   echo "Components:"
-  for c in argocd crossplane external-dns eso ingress-nginx kyverno platform-secret; do
+  for c in argocd crossplane external-dns eso ingress-nginx platform-secret; do
     echo "  - $c"
   done
   echo ""
@@ -33,7 +33,6 @@ case "$COMPONENT" in
   external-dns)    NS=external-dns      SEL="app.kubernetes.io/name=external-dns" ;;
   eso)             NS=external-secrets  SEL="app.kubernetes.io/name=external-secrets" ;;
   ingress-nginx)   NS=ingress-nginx     SEL="app.kubernetes.io/name=ingress-nginx" ;;
-  kyverno)         NS=kyverno           SEL="app.kubernetes.io/part-of=kyverno" ;;
   platform-secret) NS="" SEL="" ;;  # custom handler below
   *)               echo "unknown component: $COMPONENT"; usage 1 ;;
 esac

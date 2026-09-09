@@ -51,6 +51,36 @@ spec:
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: Addon
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-ebs-csi-addon
+  name: render-probe-spoke-7a539d18ff41
+  namespace: default
+spec:
+  forProvider:
+    addonName: aws-ebs-csi-driver
+    clusterName: render-probe
+    region: us-east-1
+    resolveConflictsOnCreate: OVERWRITE
+    resolveConflictsOnUpdate: OVERWRITE
+    serviceAccountRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-ebs-csi
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: XSpokeAccess
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
 metadata:
@@ -137,6 +167,44 @@ spec:
     thumbprintList:
       - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
     url: https://oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  annotations:
+    crossplane.io/external-name: k8-platform-render-probe-ebs-csi
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-ebs-csi-role
+  name: render-probe-spoke-8b6be9daed5a
+  namespace: default
+spec:
+  forProvider:
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [{
+          "Effect": "Allow",
+          "Principal": {"Federated": "arn:aws:iam::000000000000:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000"},
+          "Action": "sts:AssumeRoleWithWebIdentity",
+          "Condition": {"StringEquals": {
+            "oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000:sub": "system:serviceaccount:kube-system:ebs-csi-controller-sa",
+            "oidc.eks.us-east-1.amazonaws.com/id/RENDERPROBE00000000000000000000:aud": "sts.amazonaws.com"
+          }}
+        }]
+      }
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: XSpokeAccess
   managementPolicies:
     - Observe
     - Create
@@ -304,6 +372,28 @@ spec:
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  annotations: {}
+  generateName: render-probe-spoke-
+  labels:
+    crossplane.io/composite: render-probe-spoke
+    platform.k8-platform.io/role: spoke-ebs-csi-policy-attachment
+  name: render-probe-spoke-6196a2d383c7
+  namespace: default
+spec:
+  forProvider:
+    policyArn: arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+    role: k8-platform-render-probe-ebs-csi
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 ---
 apiVersion: platform.k8-platform.io/v1alpha1
 kind: XSpokeAccess
@@ -320,15 +410,24 @@ spec:
       - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: AccessPolicyAssociation
         name: render-probe-spoke-70d3d00aea7b
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: Addon
+        name: render-probe-spoke-7a539d18ff41
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: OpenIDConnectProvider
         name: render-probe-spoke-efe31fdd4c2f
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: RolePolicyAttachment
+        name: render-probe-spoke-6196a2d383c7
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: RolePolicy
         name: render-probe-spoke-61df5a3e7b5f
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: RolePolicy
         name: render-probe-spoke-d02cf4b469c9
+      - apiVersion: iam.aws.m.upbound.io/v1beta1
+        kind: Role
+        name: render-probe-spoke-8b6be9daed5a
       - apiVersion: iam.aws.m.upbound.io/v1beta1
         kind: Role
         name: render-probe-spoke-b4a21e0ec9bc
@@ -356,9 +455,10 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: access-entry, access-policy-association, cluster-facts, and 6 more'
+    - message: 'Unready resources: access-entry, access-policy-association, cluster-facts, and 9 more'
       reason: Creating
       status: "False"
       type: Ready
+  ebsCsiRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-ebs-csi
   esoRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-eso
   externalDnsRoleArn: arn:aws:iam::000000000000:role/k8-platform-render-probe-external-dns

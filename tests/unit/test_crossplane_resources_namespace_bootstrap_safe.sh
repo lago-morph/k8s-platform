@@ -20,9 +20,10 @@
 #
 # Bootstrap-guaranteed namespaces for this app's sync:
 #   - kube-system/default: cluster built-ins.
-#   - crossplane-system, argocd, kyverno, external-secrets: created by the
+#   - crossplane-system, argocd, external-secrets: created by the
 #     management terraform helm releases BEFORE the ArgoCD bootstrap app
-#     exists.
+#     exists. (kyverno was in this set until the hub Kyverno install was
+#     removed — bead kp-2al.17, reinstatement kp-caz.1/v2.0.)
 #   - any namespace created by a committed Namespace manifest in the same
 #     file set (ArgoCD applies Namespaces before namespaced kinds).
 # Anything else must ship with the Application that creates its namespace
@@ -50,7 +51,7 @@ import os, sys, glob, subprocess, json
 
 root = sys.argv[1]
 allowed = {"kube-system", "default", "crossplane-system", "argocd",
-           "kyverno", "external-secrets"}
+           "external-secrets"}
 patterns = ["xrds/*.yaml", "compositions/*.yaml", "rbac/*.yaml",
             "providerconfig/*.yaml"]
 
