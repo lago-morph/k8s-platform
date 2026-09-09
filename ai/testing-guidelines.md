@@ -50,7 +50,8 @@ quota bites, drop `node_desired_size` to 1.
 
 ## 2. Phase State Model
 
-The project is built up in phases (iterations 0–6, see `ai/handoff.md`). At
+The project is built up in phases (iterations 0–6; the plan is `ai/roadmap.md`,
+the evidence `SUBSTRATE-READINESS.md`). At
 any moment, each phase is in **exactly one** of these states:
 
 | State | Meaning | Next action |
@@ -62,14 +63,14 @@ any moment, each phase is in **exactly one** of these states:
 | `verified` | `apply` + all E2E verify checks passed | (move to phase N+1) |
 | `broken` | Last `apply` or `verify` failed; debug loop active | §4 inner loop |
 
-The agent learns the current state from the **Environment State** block at
-the top of `ai/handoff.md`. That block is the source of truth — if it's
-wrong, fix it before doing anything else.
+The agent learns the current state from the **Environment state** table in
+`ai/handoff.md`. That table is the source of truth — if it's wrong, fix it
+before doing anything else.
 
 State transitions persist across sessions because Terraform state lives in
-S3 and the cluster keeps running. The `Iteration progress` table further
-down in handoff.md records the longer-term "this phase has been verified at
-least once" view.
+S3 and the cluster keeps running — but the account itself rotates, so a new
+session re-probes with `scripts/whereami.sh` first. The longer-term "this
+has been verified from scratch" view is `SUBSTRATE-READINESS.md`.
 
 ---
 
@@ -295,11 +296,11 @@ After a state-changing run completes, the agent updates these fields in
 
 - `Phase states` table: state column for the phase in question
 - `Phase states` table: Last action column with timestamp and brief result
-- `Phase states` table: Run URL column (the GitHub Actions run that produced
-  the new state)
+- `Environment state` table: the Run ID / SHA column (the GitHub Actions run
+  or the commit that produced the new state)
 
-If the phase reached `verified` for the first time, also bump the
-`Iteration progress` table further down in handoff.md.
+If the phase produced clean-build evidence, record it in
+`SUBSTRATE-READINESS.md` by run ID (docs-only commit, §7.1).
 
 Commit with `chore(handoff): phase N → <new-state>`.
 
