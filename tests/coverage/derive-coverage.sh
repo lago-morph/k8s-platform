@@ -10,6 +10,9 @@
 #
 # Usage:
 #   derive-coverage.sh                 # print the derived group/kind set (sorted, unique)
+#   derive-coverage.sh --expect-full   # print the EXPECT-FULL subset: the derived
+#                                      # set MINUS the kinds registry.yaml marks
+#                                      # `coverage: transitive` (kp-2al.20)
 #   derive-coverage.sh --check         # compare derived set vs the committed
 #                                      # oracle; honor tests/coverage/mode
 #                                      # (warn => print drift, exit 0;
@@ -30,6 +33,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 COMPOSITIONS_DIR="${COVERAGE_COMPOSITIONS_DIR:-$ROOT/crossplane/compositions}"
 ORACLE="${COVERAGE_ORACLE:-$ROOT/tests/coverage/expected-coverage.txt}"
 MODE_FILE="${COVERAGE_MODE_FILE:-$ROOT/tests/coverage/mode}"
+REGISTRY="${COVERAGE_REGISTRY:-$ROOT/tests/coverage/registry.yaml}"
 
 # The single extraction expression — MUST be byte-identical to the one the
 # fixture-test (tests/unit/test_coverage_deriver.sh) asserts against the oracle.
@@ -44,10 +48,37 @@ derive() {
   done | sort -u
 }
 
+# transitive_kinds — the kinds the registry records as defended TRANSITIVELY:
+# they have no standalone check and emit no COVERS line of their own, because a
+# coupled check's assertions prove them (registry `coverage: transitive`, with
+# `defended_by` naming the check that does the proving).
+transitive_kinds() {
+  [ -f "$REGISTRY" ] || return 0
+  yq -r '.kinds | to_entries
+         | map(select(.value.coverage == "transitive"))
+         | .[].key' "$REGISTRY" 2>/dev/null | sed '/^$/d' | sort -u
+}
+
 cmd="${1:-print}"
 case "$cmd" in
   print|"")
     derive "$COMPOSITIONS_DIR"
+    ;;
+  --expect-full)
+    # The EXPECT-FULL set the live orchestrator gates on (kp-2al.20). A
+    # transitively-defended kind must NOT be in it: runtime coverage is counted
+    # from the COVERS lines checks emit, so a kind with no check of its own
+    # would read "declared but unverified" on every single run (build6-2220:
+    # four such kinds, exit 3, while the registry and CI's explicit
+    # LIVE_EXPECT_FULL both already recorded them as transitively covered).
+    # The ride-along is not a hole: the defending check's OWN kind is in this
+    # set, so if that check stops passing, the violation fires there.
+    transitive="$(transitive_kinds)"
+    if [ -n "$transitive" ]; then
+      comm -23 <(derive "$COMPOSITIONS_DIR") <(printf '%s\n' "$transitive")
+    else
+      derive "$COMPOSITIONS_DIR"
+    fi
     ;;
   --check)
     derived="$(derive "$COMPOSITIONS_DIR")"
@@ -71,7 +102,7 @@ case "$cmd" in
     exit 0
     ;;
   *)
-    echo "derive-coverage.sh: unknown command '$cmd' (use: print | --check)" >&2
+    echo "derive-coverage.sh: unknown command '$cmd' (use: print | --expect-full | --check)" >&2
     exit 2
     ;;
 esac

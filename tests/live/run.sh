@@ -79,8 +79,13 @@ derive_expect_full() {
   # whether a given cluster declares them is refined per-cluster in P2 (the
   # git-cluster-declaration parse). Until then, fail-closed: with no checks
   # populated the all-skip⇒RED rule already prevents a green-by-absence.
+  # --expect-full (not the bare print) is the EXPECT-FULL set: the derived kinds
+  # MINUS the kinds tests/coverage/registry.yaml records as transitively
+  # defended (`coverage: transitive`). Those have no standalone check and emit
+  # no COVERS line of their own — a coupled check's assertions prove them — so
+  # counting them here reported them unverified forever (kp-2al.20).
   local deriver="$REPO_ROOT/tests/coverage/derive-coverage.sh"
-  [ -x "$deriver" ] && "$deriver" 2>/dev/null | sort -u || true
+  [ -x "$deriver" ] && "$deriver" --expect-full 2>/dev/null | sort -u || true
 }
 
 # ---- profile validation + the verify-only ⇒ readonly coupling ------------
@@ -129,9 +134,10 @@ banner "PROFILE=$LIVE_PROFILE MODE=$MODE TIERS='$ACTIVE_TIERS' CLUSTER='${LIVE_C
 RUN_ID="${RUN_ID:-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6 || echo $$)}"
 export RUN_ID
 
-PASS=0; SKIP=0; FAIL=0; EXPECTVIOL=0
+PASS=0; SKIP=0; FAIL=0; CHILD_EXPECTVIOL=0
 COVERED_PASS=""          # group/kinds verified by a PASSING check
-declare -a FAILED=()
+declare -a FAILED=()           # hard failures
+declare -a EXPECT_FAILED=()    # children that exited LIVE_RC_EXPECT_FULL (code 3)
 
 run_check() {
   local script="$1"
@@ -162,8 +168,22 @@ run_check() {
 $k"
       done < <(printf '%s\n' "$out" | sed -n 's/^COVERS //p')
       ;;
-    "$LIVE_RC_SKIP")       SKIP=$((SKIP+1)) ;;
-    "$LIVE_RC_EXPECT_FULL") EXPECTVIOL=$((EXPECTVIOL+1)); FAILED+=("$script (expect-full)") ;;
+    "$LIVE_RC_SKIP")
+      # kp-ug3: a HUB-FIXTURE check that skipped because a hub fixture was
+      # MISSING while the hub itself answered is a STRUCTURAL skip, not a
+      # not-applicable — promote it to a FAIL so it cannot hide. (The marker is
+      # printed by hub_fixture_absent() in lib/live-lib.sh; a skip for absent
+      # tooling/creds/relay prints no marker and stays a skip.)
+      local absent
+      absent="$(printf '%s\n' "$out" | sed -n 's/^HUB-FIXTURE-ABSENT //p' | head -1)"
+      if [ -n "$absent" ]; then
+        FAIL=$((FAIL+1))
+        FAILED+=("$script (hub-fixture absent on $(live_hub_cluster): $absent)")
+      else
+        SKIP=$((SKIP+1))
+      fi
+      ;;
+    "$LIVE_RC_EXPECT_FULL") CHILD_EXPECTVIOL=$((CHILD_EXPECTVIOL+1)); EXPECT_FAILED+=("$script (expect-full)") ;;
     *)                     FAIL=$((FAIL+1)); FAILED+=("$script (exit=$rc)") ;;
   esac
 }
@@ -219,18 +239,33 @@ if [ -n "$EXPECT_FULL" ]; then
   MISSING_EXPECT="$(comm -23 <(printf '%s\n' "$EXPECT_FULL") <(printf '%s\n' "$COVERED_SORTED"))"
 fi
 
+# kp-lc5: ONE accounting for expect-full violations. A violation is EITHER a
+# child that exited LIVE_RC_EXPECT_FULL, OR a git-declared kind that no passing
+# check covered — both are counted, both are printed below, and any non-zero
+# total is exit 3. Counting only the first is how build6-2220 printed four
+# violations under "expect-full-violations=0": the exit code was honest, the
+# counter was not, and CI's pass criterion reads the counter.
+MISSING_EXPECT_COUNT="$(printf '%s\n' "$MISSING_EXPECT" | grep -c . || true)"
+EXPECTVIOL=$(( CHILD_EXPECTVIOL + MISSING_EXPECT_COUNT ))
+
 # ---- tabulate (the inversion) ---------------------------------------------
 echo ""
 banner "summary  pass=$PASS skip=$SKIP fail=$FAIL expect-full-violations=$EXPECTVIOL checks=$CHECK_COUNT"
 
 RC=0
-# expect-full kinds with no passing coverage => promoted FAIL (reserved code 3)
-if [ -n "$MISSING_EXPECT" ]; then
-  echo "  EXPECT-FULL VIOLATION — git declares these kinds but no passing check verified them:" >&2
-  printf '    - %s\n' $MISSING_EXPECT >&2
+# expect-full kinds with no passing coverage => promoted FAIL (reserved code 3).
+# Every violation the counter counts is also NAMED here, and vice versa.
+if [ "$EXPECTVIOL" -gt 0 ]; then
+  echo "  EXPECT-FULL VIOLATION ($EXPECTVIOL) — git declares these but no passing check verified them" >&2
+  echo "  (each entry is either an unverified kind, or the check that reported one):" >&2
+  if [ -n "$MISSING_EXPECT" ]; then
+    printf '    - %s\n' $MISSING_EXPECT >&2
+  fi
+  if [ "${#EXPECT_FAILED[@]}" -gt 0 ]; then
+    for t in "${EXPECT_FAILED[@]}"; do echo "    - $t" >&2; done
+  fi
   RC=3
 fi
-if [ "$EXPECTVIOL" -gt 0 ]; then RC=3; fi
 # any hard failure
 if [ "$FAIL" -gt 0 ]; then
   echo "  FAILED checks:" >&2

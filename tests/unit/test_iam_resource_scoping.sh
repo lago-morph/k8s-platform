@@ -106,6 +106,15 @@ assert_contains "RDSModifyInstance carries the db-tag ManagedBy condition" \
 assert_eq "RDSWrite statement present" "true" "$([ -n "$RDSWRITE_RES" ] && echo true || echo false)"
 assert_eq "RDSModifyInstance statement present" "true" "$([ -n "$RDSMOD_RES" ] && echo true || echo false)"
 
+# DELETE-path completeness (build #6 teardown, 2026-09-09): the AWS provider
+# reads a role's instance profiles while deleting it, so a policy with
+# iam:DeleteRole but no iam:ListInstanceProfilesForRole wedges every composed
+# role on AccessDenied and leaks them. Creates never exercise it, so only a
+# source assertion catches this before the next teardown.
+assert_contains "IAMRoles grants DeleteRole" 'iam:DeleteRole' "$(block_for_sid IAMRoles)"
+assert_contains "IAMRoles grants ListInstanceProfilesForRole (role DELETE needs it)" \
+  'iam:ListInstanceProfilesForRole' "$(block_for_sid IAMRoles)"
+
 # Sanity: the two narrowed statements actually exist (the split happened).
 assert_eq "IAMRoles statement present" "true"          "$([ -n "$ROLE_RES" ] && echo true || echo false)"
 assert_eq "IAMOIDCProviders statement present" "true"  "$([ -n "$OIDC_RES" ] && echo true || echo false)"

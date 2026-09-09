@@ -89,6 +89,41 @@ mkcheck after b 1
 assert_eq "one fail ⇒ exit 1" 1 "$(run_suite_rc LIVE_EXPECT_FULL= )"
 
 echo ""
+echo "── live: a hub-fixture SKIP is promoted to a FAIL (kp-ug3) ───"
+# A hub-fixture check that skipped because a HUB fixture was missing while the
+# hub itself answered prints HUB-FIXTURE-ABSENT (lib/live-lib.sh
+# hub_fixture_absent) and exits with the skip code. That skip is STRUCTURAL — it
+# can never pass, so it must not be able to hide in the skip column.
+reset_checks
+mkcheck after a 0 "x/Y"                      # a pass, so all-skip is not the signal
+mkdir -p "$TMP/negative"
+cat > "$TMP/negative/hubfixture.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "HUB-FIXTURE-ABSENT argocd namespace not present — ArgoCD not installed"
+echo "  SKIP: argocd namespace not present"
+exit 2
+EOF
+chmod +x "$TMP/negative/hubfixture.sh"
+assert_eq "hub-fixture absent ⇒ exit 1 (FAIL, not a skip)" 1   "$(run_suite_rc LIVE_EXPECT_FULL= )"
+OUT_HF="$(set +e; env LIVE_EXPECT_FULL= LIVE_CHECKS_ROOT="$TMP"             LIVE_SKIP_REGISTER="$TMP/REGISTER.yaml" bash "$RUN" 2>&1; set -e)"
+assert_contains "the promoted failure is NAMED in the FAILED list"   "hub-fixture absent" "$OUT_HF"
+assert_contains "the promotion counts as a fail, not a skip" "fail=1" "$OUT_HF"
+assert_contains "and the skip column stays empty" "skip=0" "$OUT_HF"
+
+echo ""
+echo "── live: an ordinary SKIP is still a skip (no marker) ────────"
+# The promotion must be narrow: a skip for absent tooling/creds/relay prints no
+# marker and keeps the suite green.
+cat > "$TMP/negative/hubfixture.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "  SKIP: kubectl not on PATH"
+exit 2
+EOF
+chmod +x "$TMP/negative/hubfixture.sh"
+assert_eq "unmarked skip ⇒ exit 0 (still just a skip)" 0   "$(run_suite_rc LIVE_EXPECT_FULL= )"
+rm -rf "$TMP/negative"
+
+echo ""
 echo "── live: LIVE_MODE fail-closed (unset/garbage ⇒ readonly) ────"
 # live_mode() is the single source for the fail-closed default.
 assert_eq "LIVE_MODE unset ⇒ readonly"   readonly "$(env -u LIVE_MODE bash -c '. tests/live/lib/live-lib.sh; live_mode')"

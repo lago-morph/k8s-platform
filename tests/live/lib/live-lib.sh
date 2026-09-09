@@ -43,6 +43,29 @@ skip() { echo "  SKIP: $*"; exit "$LIVE_RC_SKIP"; }
 # actually verified by a PASSING check.
 covers() { echo "COVERS $1"; }
 
+# ---- hub vs cluster-under-test (kp-ug3) -----------------------------------
+# LIVE_CLUSTER names the ONE cluster under test, which is routinely a SPOKE.
+# Some checks assert HUB-side fixtures (the `argocd` + `crossplane-system`
+# namespaces and the objects in them) — those must address the HUB regardless of
+# which cluster is under test, or they skip structurally and can never pass
+# (build6-2042: three negatives skipped with "argocd namespace not present" /
+# "crossplane-system namespace not present" while both namespaces existed, on
+# the hub).
+#
+# live_hub_cluster — the hub cluster name. LIVE_HUB_CLUSTER overrides; the
+# default is the durable hub name (the same constant hello-e2e-live.sh pins).
+live_hub_cluster() { echo "${LIVE_HUB_CLUSTER:-k8-platform-mgmt}"; }
+
+# hub_fixture_absent <what> — a hub-fixture check whose hub API call SUCCEEDED
+# but found <what> missing. The hub ANSWERED, so this is a STRUCTURAL absence,
+# never a not-applicable: the check still exits with the skip code (only the
+# orchestrator knows the active profile), but it prints the marker line the
+# orchestrator promotes to a FAIL. A structural skip must not be able to hide.
+hub_fixture_absent() {
+  echo "HUB-FIXTURE-ABSENT $*"
+  skip "$* (hub $(live_hub_cluster) answered — structural absence, promoted to FAIL by the orchestrator)"
+}
+
 # expect_full_fail <kind> — a check that found git declares <kind> but the real
 # resource is absent calls this and exits LIVE_RC_EXPECT_FULL.
 expect_full_fail() {

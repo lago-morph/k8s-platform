@@ -144,6 +144,10 @@ run_suite tests/unit/test_spoke_storage.sh
 # auto-013 test-overhaul P1: derived coverage manifest (FINAL-PLAN §4.5)
 run_suite tests/unit/test_coverage_deriver.sh
 run_suite tests/unit/test_live_orchestrator.sh
+# kp-lc5: the live summariser's expect-full counter, the printed violation block
+# and the exit code must agree (build6-2220 printed four violations under
+# "expect-full-violations=0").
+run_suite tests/unit/test_live_summary_accounting.sh
 run_suite tests/unit/test_live_evidence_gate.sh
 run_suite tests/unit/test_verifier_role_no_wildcards.sh
 run_suite tests/unit/test_skip_register.sh
@@ -159,6 +163,8 @@ run_suite tests/unit/test_iam_resource_scoping.sh
 run_suite tests/unit/test_iam_tightening_gate.sh
 # auto-015 P5: guard-fired negative checks (hermetic, no cluster, no AWS)
 run_suite tests/unit/test_negatives_guard_fired.sh
+# kp-nkz: the Argo CD endpoint's TLS-verifying live check (fake aws + fake curl)
+run_suite tests/unit/test_argocd_endpoint_tls.sh
 # auto-015 P4: instantiate-and-verify engine + the two instantiate checks
 # (fake kubectl + fake aws; no real cluster, no real AWS)
 run_suite tests/unit/test_instantiate_lib.sh

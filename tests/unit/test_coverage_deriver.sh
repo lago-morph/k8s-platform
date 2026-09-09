@@ -14,6 +14,11 @@
 #     `warn` is itself a red diff — round-3 devx M4)
 #   - defended_by coverage (WARN-ONLY until P2/P4): a `pending:*` marker prints a
 #     WARN but does not fail.
+#   - the EXPECT-FULL subset (kp-2al.20, ENFORCE): `--expect-full` is the derived
+#     set minus the registry's `coverage: transitive` kinds; every transitive kind
+#     must ride on a check that also defends a NON-transitive kind; and CI's
+#     explicit LIVE_EXPECT_FULL must be a subset of it, so the two surfaces that
+#     declare what the platform owes can never contradict each other.
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."   # repo root
@@ -79,5 +84,71 @@ done <<< "$derived"
 # Not a failure while behavioral phases are open; just report the count.
 echo "  ($pending_count kind(s) awaiting a behavioral test — WARN, not FAIL)"
 _pass "defended_by field present for every registered kind"
+
+echo ""
+echo "── coverage: EXPECT-FULL subset (kp-2al.20, ENFORCE) ─────────"
+# The live orchestrator gates on `--expect-full`, NOT the bare derived set:
+# coverage is counted at runtime from the COVERS lines checks emit, so a kind
+# with no standalone check (registry `coverage: transitive`) would read
+# "declared but unverified" forever (build6-2220: four such kinds => exit 3).
+# NOTE: assert_exit_code above leaves errexit ON, so every capture below is
+# `|| true`-guarded: a missing subcommand must read as a FAILED ASSERTION, not
+# as an aborted test file.
+transitive="$( { yq -r '.kinds | to_entries | map(select(.value.coverage == "transitive")) | .[].key' "$REGISTRY" || true; } | sed '/^$/d' | sort -u)"
+expect_full="$( { "$DERIVE" --expect-full 2>/dev/null || true; } | sort -u)"
+assert_eq "--expect-full emits a non-empty set" "true" \
+  "$([ -n "$expect_full" ] && echo true || echo false)"
+assert_eq "--expect-full == derived minus the transitive kinds" \
+  "$(comm -23 <(printf '%s\n' "$derived") <(printf '%s\n' "$transitive"))" \
+  "$expect_full"
+# No transitive kind may leak back into the gated set.
+leaked=""
+while IFS= read -r k; do
+  [ -z "$k" ] && continue
+  printf '%s\n' "$expect_full" | grep -qxF "$k" && leaked="$leaked $k"
+done <<< "$transitive"
+assert_eq "no transitive kind is in the EXPECT-FULL set" "" "$leaked"
+# The four kinds build6-2220 reported unverified are exactly the transitive ones.
+for k in ec2.aws.m.upbound.io/SecurityGroup \
+         generators.external-secrets.io/Password \
+         rds.aws.m.upbound.io/SubnetGroup \
+         secretsmanager.aws.m.upbound.io/SecretVersion; do
+  assert_eq "build6-2220 kind excluded from EXPECT-FULL: $k" "true" \
+    "$(printf '%s\n' "$expect_full" | grep -qxF "$k" && echo false || echo true)"
+  assert_contains "still REGISTERED with a real defender: $k" \
+    "tests/live/checks/" "$(yq -r ".kinds.\"$k\".defended_by" "$REGISTRY")"
+done
+
+echo ""
+echo "── coverage: a transitive kind must RIDE on a gated check ────"
+# A `coverage: transitive` kind is only honest if the check that defends it is
+# itself gated — i.e. that check also defends a NON-transitive kind, which stays
+# in EXPECT-FULL. Otherwise marking a kind transitive would orphan it entirely.
+# kind|defended_by|coverage for every registry entry (yq v4 has no --arg).
+pairs="$(yq -r '.kinds | to_entries | .[]
+          | .key + "|" + (.value.defended_by // "") + "|" + (.value.coverage // "")' "$REGISTRY" || true)"
+orphans=""
+while IFS= read -r k; do
+  [ -z "$k" ] && continue
+  d="$(printf '%s\n' "$pairs" | awk -F'|' -v k="$k" '$1 == k { print $2 }')"
+  riders="$(printf '%s\n' "$pairs" | awk -F'|' -v d="$d" '$2 == d && $3 != "transitive"' | grep -c . || true)"
+  [ "${riders:-0}" -gt 0 ] || orphans="$orphans $k"
+done <<< "$transitive"
+assert_eq "every transitive kind rides on a check that also defends a gated kind" "" "$orphans"
+
+echo ""
+echo "── coverage: CI's LIVE_EXPECT_FULL ⊆ derived EXPECT-FULL ─────"
+# The two surfaces that declare what the platform owes must not contradict each
+# other (kp-2al.20): CI may declare FEWER kinds than the derivation (a CI runner
+# cannot reach the SSM relay, so kubectl-driven checks SKIP there), but it must
+# never declare a kind the registry records as transitively covered — that kind
+# has no check that can ever emit its COVERS line.
+CI_PRODUCER=".github/scripts/live-verify-run.sh"
+ci_list="$( { sed -n '/^export LIVE_EXPECT_FULL="/,/"$/p' "$CI_PRODUCER" || true; } \
+            | sed 's/^export LIVE_EXPECT_FULL="//; s/"$//' | sed '/^$/d' | sort -u)"
+assert_eq "CI declares a non-empty LIVE_EXPECT_FULL" "true" \
+  "$([ -n "$ci_list" ] && echo true || echo false)"
+assert_eq "every CI-declared kind is in the derived EXPECT-FULL set" "" \
+  "$(comm -23 <(printf '%s\n' "$ci_list") <(printf '%s\n' "$expect_full"))"
 
 assert_summary

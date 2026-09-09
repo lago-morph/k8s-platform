@@ -58,7 +58,7 @@ All with conditions `Synced`/`Ready`/`Responsive` = True:
 | Endpoint | Expected |
 |---|---|
 | `https://hello.platform.<domain>` | HTTP 200 over verified TLS — **the** behavioral gate |
-| `https://argocd.management.<domain>` | Argo CD UI answering with a valid certificate (operator login) |
+| `https://argocd.management.<domain>` | Argo CD UI answering with a valid certificate (operator login) — attested by `tests/live/checks/after/argocd-endpoint-tls-live.sh`, which fetches it with TLS verification ON and fails if the chain does not validate (kp-nkz; measured `http=200 ssl_verify_result=0` on 2026-09-09 against the build-#6 hub, and a gating check as of the next build) |
 | `https://grafana.platform.<domain>` | Host configured by the kube-prometheus-stack Application, which has been Healthy on storage since build #6 — but **no HTTP check of this endpoint has been recorded on any build**, so it is `pending clean-build verification`, not a green row |
 
 ## Reading this page as an oracle
