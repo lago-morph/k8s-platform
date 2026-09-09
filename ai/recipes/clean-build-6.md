@@ -17,6 +17,9 @@ Owner intent: this build is the step 3 "see it all working" milestone
   Keycloak DB (row 10; `tests/live/checks/instantiate/cognito-federation-live.sh` header).
 - Build #5 already verified the EKS-side association ACTIVE; build #6 must
   produce the realm-broker half plus the federation oracle from scratch.
+- **Before dispatching anything:** the Kyverno removal bead (step 3, P0)
+  must be merged on the ref you build from. It changes management
+  Terraform, so build #6's live-verify run is its evidence.
 
 ## 1. Preconditions
 

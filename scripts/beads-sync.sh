@@ -160,7 +160,11 @@ cmd_push() {
         return 0
     fi
     if ! bd dolt push; then
-        die "bd dolt push failed — if it was rejected as non-fast-forward, run 'bd dolt pull' and push again"
+        # Another clone pushed first. Different beads merge cleanly on pull;
+        # the same bead edited in two clones does not (ai/beads-dolt-git-remotes.md §4).
+        printf 'push rejected; pulling and retrying once\n' >&2
+        bd dolt pull || die "bd dolt pull failed after a rejected push — same-bead conflict? see ai/beads-dolt-git-remotes.md §4"
+        bd dolt push || die "bd dolt push failed after pull — resolve by hand (ai/beads-dolt-git-remotes.md §4)"
     fi
     printf 'pushed to %s\n' "$BEADS_DATA_REF"
 }

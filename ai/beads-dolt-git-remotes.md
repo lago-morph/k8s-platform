@@ -115,10 +115,15 @@ Implications:
   blindly, and any branch-protection rule on it must allow force pushes.
 - The sandbox cannot delete branches, so a wrongly created branch needs
   the GitHub UI or an API call to remove.
-- Every session is a fresh clone: a SessionStart hook must install the
-  pinned `bd`, then `bd bootstrap` (first time) or `bd dolt pull`, then
-  `bd prime`. The sandbox is ephemeral, so `bd dolt push` must be driven
-  by a hook at session end / before compaction, not by instructions.
+- Every session is a fresh clone: the SessionStart hook installs the
+  pinned `bd`, bootstraps or pulls, and prints status + `bd ready`. The
+  sandbox is ephemeral and a reclaimed container never runs SessionEnd,
+  so pushes are driven by the hooks that fire while the process lives:
+  **Stop** (after every assistant turn; 0.15 s when nothing to push),
+  **PreCompact**, and the **PreToolUse guard on `git push`** (beads first,
+  code push blocked if that fails). SessionEnd is wired as a bonus only.
+  The loss window is the current turn. A rejected push (another clone
+  pushed first) is retried once after `bd dolt pull`.
 
 ## 4. Experiment results (2026-09-08, bd 1.2.2, this sandbox) — the mechanism in use
 

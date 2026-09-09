@@ -1,7 +1,8 @@
 #!/bin/bash
-# SessionEnd / PreCompact hook: push unpushed beads (Dolt) commits so task
-# state survives the ephemeral sandbox. Best effort on exit (a hook cannot
-# stop a session ending); failures are printed for the transcript.
+# Stop / PreCompact / SessionEnd hook: push unpushed beads (Dolt) commits so
+# task state is never more than one turn behind origin. Stop fires after every
+# assistant turn (cheap: 0.15 s when nothing to push); SessionEnd is best
+# effort only — a reclaimed sandbox never runs it. Failures are printed.
 set -uo pipefail
 REPO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 command -v bd >/dev/null 2>&1 || exit 0
