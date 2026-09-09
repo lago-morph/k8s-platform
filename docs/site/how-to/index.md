@@ -30,6 +30,10 @@ In the order a new tenant tends to need them:
 - [Expose an application with a public hostname and TLS](expose-an-application.md)
 - [Provision a platform secret and consume it](provision-a-platform-secret.md)
 - [Provision a database and connect an application to it](provision-a-database.md)
+- [Fulfil a tenant's database request](fulfil-a-database-request.md) —
+  the administrator's runbook behind that guide: place the composite
+  resource, push the credentials to Secrets Manager, hand the key back
+  on the ticket
 - [Check an application's health and find its URL](check-health-and-find-url.md)
 - [Update and roll back an application](update-and-roll-back.md)
 - [Add or upgrade a platform component](add-or-upgrade-a-component.md) — operator task

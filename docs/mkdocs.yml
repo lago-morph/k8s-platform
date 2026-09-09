@@ -97,6 +97,7 @@ nav:
       - Expose an application: how-to/expose-an-application.md
       - Provision a platform secret: how-to/provision-a-platform-secret.md
       - Provision a database: how-to/provision-a-database.md
+      - Fulfil a database request (admin): how-to/fulfil-a-database-request.md
       - Check health and find the URL: how-to/check-health-and-find-url.md
       - Update and roll back: how-to/update-and-roll-back.md
       - Add or upgrade a component: how-to/add-or-upgrade-a-component.md
