@@ -64,4 +64,7 @@ bd dep add <issue> <blocker>   # <issue> depends on <blocker>
 bd list -l v2.0                # the deferred bucket
 bash scripts/beads-sync.sh status|push|bootstrap
 ```
-Gotcha: `bd create --deps "blocks:<id>"` makes the NEW bead block `<id>`.
+Gotchas: `bd create --deps "blocks:<id>"` makes the NEW bead block `<id>`.
+`bd show` (text) silently hides angle-bracket tokens like `<spoke>` in body
+fields; the data is intact (`bd show --json`, `bd history`). Read beads
+through `--json` when it matters and write placeholders as `SPOKE_CLUSTER`.

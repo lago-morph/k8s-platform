@@ -77,6 +77,8 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
 
 ## Working with the owner
 
+- When the owner asks for something, deliver exactly that. Never fix, tidy,
+  or "improve" what you were asked to show; report what you noticed and wait.
 - Act on the answer to a question you asked; it overrides your prior plan.
 - `[Request interrupted by user]` is a hard stop: no pivot to adjacent work;
   kill background processes; wait for direction.
