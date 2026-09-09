@@ -53,7 +53,9 @@ Detailed planning happens one step at a time, with the owner, after the
 previous step closes; each step epic has a GATE bead (label `gate`) that
 every child depends on. Beads written ahead of that session are labelled
 `sketch`: do not elaborate, split, or work them. Never define scenarios,
-page lists, or task breakdowns for a future step.
+page lists, or task breakdowns for a future step. Any step that uses a
+provisioned AWS account gets an owner bead "provision the account" that
+blocks the first AWS-using task; docs and test-prep tasks never depend on it.
 
 ## Improving this skill
 
