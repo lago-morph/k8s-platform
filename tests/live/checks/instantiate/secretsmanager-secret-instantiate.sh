@@ -22,9 +22,17 @@
 # of those either.)
 #
 # Drives the REAL controller under its scoped IRSA — NOT an admin-AWS write. The
-# secret external-name is k8-platform/live-verify-<RUN_ID> so the controller's
-# secretsmanager:CreateSecret (scoped to secret:k8-platform/* in
-# terraform/management/irsa.tf) succeeds rather than failing closed.
+# AWS secret name comes from spec.forProvider.name = k8-platform/live-verify-<RUN_ID>,
+# exactly the lever crossplane/compositions/platform-secret.yaml patches, so the
+# controller's secretsmanager:CreateSecret (scoped to secret:k8-platform/* in
+# terraform/management/irsa.tf) succeeds rather than failing closed. It is NOT
+# crossplane.io/external-name: for aws_secretsmanager_secret the Terraform ID is
+# the ARN, so upjet treats external-name as PROVIDER-assigned — the annotation
+# seeds nothing and the provider asks AWS for `terraform-<timestamp>`, which the
+# scoped policy denies for the whole convergence window (kp-7ei, build #6). The
+# sibling IAM Role check CAN name by external-name only because for
+# aws_iam_role the Terraform ID IS the role name.
+#
 # recoveryWindowInDays=0 so the delete is immediate (no 7-day window blocking
 # re-creates / leaving a scheduled-for-deletion shell), matching the Composition.
 #
@@ -58,12 +66,11 @@ apiVersion: secretsmanager.aws.m.upbound.io/v1beta1
 kind: Secret
 metadata:
   name: ${MR_NAME}
-  annotations:
-    crossplane.io/external-name: ${SECRET_EXTERNAL_NAME}
   labels:
     test.k8-platform/live-verify: "true"
 spec:
   forProvider:
+    name: ${SECRET_EXTERNAL_NAME}
     region: ${REGION}
     recoveryWindowInDays: 0
     tags:

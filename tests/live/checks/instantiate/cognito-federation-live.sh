@@ -30,9 +30,10 @@
 # PRECONDITIONS (loud SKIPs, not failures — each names the build state
 # that makes the path not-yet-exercisable):
 #   - Keycloak discovery serving on auth.platform.<domain>
-#   - the realm advertises the cognito broker (a realm imported before the
-#     phase-5 broker block CANNOT re-import on a live DB — IGNORE_EXISTING;
-#     first exercisable on a from-scratch build)
+#   - the realm advertises the cognito broker — probed by following the
+#     kc_idp_hint redirect CHAIN and testing the first OFF-HOST target
+#     (Keycloak 24 always answers kc_idp_hint with its own
+#     /broker/<alias>/login hop first; kp-8vs)
 #   - ASM k8-platform/base/cognito present (the terraform bridge)
 #   - the k8s-viewers group exists in the pool
 #   - the EKS IdentityProviderConfig `keycloak` is ACTIVE on the spoke
@@ -98,8 +99,12 @@ aws cognito-idp get-group --group-name "$GROUP" --user-pool-id "$POOL_ID" \
   || skip "group $GROUP absent in pool $POOL_ID (pre-phase-5 base — groups ship with the Cognito bridge)"
 
 # ── The realm must actually offer the broker ──────────────────────────────
-# (A live realm imported before the broker block stays broker-less until a
-# from-scratch build re-imports it — IGNORE_EXISTING; see the realm CM.)
+# Keycloak 24 answers a kc_idp_hint authorization request with a 303 to its
+# OWN broker entry point (/realms/platform/broker/<alias>/login); the Cognito
+# authorize URL is only the NEXT hop. So follow Location while the target
+# stays on the Keycloak host (same shape and cookie jar as the broker-flow
+# loop further down) and test the FIRST OFF-HOST target. Matching hop 1 alone
+# skipped on a correctly brokered realm forever (kp-8vs, build #6).
 PKCE_VERIFIER="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 PKCE_CHALLENGE="$(printf '%s' "$PKCE_VERIFIER" | python3 -c 'import sys,hashlib,base64; print(base64.urlsafe_b64encode(hashlib.sha256(sys.stdin.buffer.read()).digest()).rstrip(b"=").decode())')"
 STATE="$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')"
@@ -118,19 +123,34 @@ trap cleanup EXIT
 
 AUTH_URL="${AUTH_EP}?client_id=kubernetes&response_type=code&scope=openid%20profile&redirect_uri=${REDIRECT_URI}&state=${STATE}&code_challenge=${PKCE_CHALLENGE}&code_challenge_method=S256&kc_idp_hint=cognito"
 
-# First hop: Keycloak should 302 us straight to the Cognito hosted UI
-# (kc_idp_hint). A 200 login page instead means the broker is not in the
-# live realm.
-HOP1_HEADERS="$WORK/hop1.h"
-curl -sS --max-time "$CURL_MAX" -c "$KC_JAR" -D "$HOP1_HEADERS" -o "$WORK/hop1.html" "$AUTH_URL" \
-  || skip "authorization endpoint unreachable ($AUTH_EP)"
-COG_AUTHORIZE="$(awk 'tolower($1)=="location:" {print $2}' "$HOP1_HEADERS" | tr -d '\r' | head -1)"
-case "$COG_AUTHORIZE" in
-  *amazoncognito.com/oauth2/authorize*|*amazoncognito.com/authorize*) ;;
+PRE_HOP_MAX=5
+PRE_HOP_URL="$AUTH_URL"
+PRE_OFFHOST=""      # the first Location that left the Keycloak host
+PRE_LANDED=""       # a hop that answered 200 (a Keycloak-hosted page)
+: > "$KC_JAR"
+for _pre_hop in 1 2 3 4 5; do          # bounded, PRE_HOP_MAX hops
+  H="$WORK/pre-hop.h"
+  curl -sS --max-time "$CURL_MAX" -b "$KC_JAR" -c "$KC_JAR" -D "$H" -o "$WORK/pre-hop.html" "$PRE_HOP_URL" \
+    || skip "authorization endpoint unreachable ($PRE_HOP_URL)"
+  LOC="$(awk 'tolower($1)=="location:" {print $2}' "$H" | tr -d '\r' | head -1)"
+  if [ -z "$LOC" ]; then PRE_LANDED="$PRE_HOP_URL"; break; fi
+  case "$LOC" in
+    https://${HOST}/*) PRE_HOP_URL="$LOC"; continue ;;   # Keycloak's own broker hop
+    *) PRE_OFFHOST="$LOC"; break ;;
+  esac
+done
+
+[ -z "$PRE_LANDED" ] \
+  || skip "kc_idp_hint=cognito was answered by a Keycloak-hosted page with no redirect ($PRE_LANDED) — the live realm has no cognito broker"
+case "$PRE_OFFHOST" in
+  *amazoncognito.com/oauth2/authorize*|*amazoncognito.com/authorize*)
+    COG_AUTHORIZE="$PRE_OFFHOST" ;;
+  "")
+    skip "kc_idp_hint=cognito never left the Keycloak host within ${PRE_HOP_MAX} hops (last: $PRE_HOP_URL)" ;;
   *)
-    skip "realm does not broker to Cognito yet (no kc_idp_hint redirect — realm imported before the phase-5 broker block; first exercisable on a from-scratch build)"
-    ;;
+    skip "kc_idp_hint=cognito redirected off-host to $PRE_OFFHOST, which is not the Cognito hosted UI (the broker alias points elsewhere)" ;;
 esac
+log "broker chain leaves Keycloak for $COG_AUTHORIZE"
 
 # ── The spoke IdentityProviderConfig must be ACTIVE ───────────────────────
 CLUSTERS_JSON="$(aws eks list-clusters --region "$REGION" --query 'clusters' --output json 2>/dev/null)" \
