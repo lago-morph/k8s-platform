@@ -21,6 +21,9 @@ In the order a new tenant tends to need them:
 - [Build the platform from a workstation](build-the-platform-on-a-workstation.md)
   — the copy/paste Terraform alternative; published, but never executed
   by a person and therefore unverified
+- [Get admin access and platform facts](admin-access.md) — the
+  administrator's guide: kubeconfigs for both clusters, the Argo CD
+  URL and password, and where the platform's discovered values live
 - [Onboard a tenant](onboard-a-tenant.md) — documented as-is,
   including the operator hand-work
 - [Deploy an application via GitOps](deploy-an-application.md)

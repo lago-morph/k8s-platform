@@ -129,10 +129,11 @@ that is the gates waiting for you, not a defect.
     The Argo CD admin URL and password are outputs of the management
     Terraform module (`argocd_url`, `argocd_admin_password`), read with
     `terraform output` against the shared state backend — never from
-    the cluster's initial-admin Secret. Obtaining them from a
-    workstation is an administrator task this documentation does not
-    yet cover end to end; the `kubectl` form below needs only the
-    kubeconfig you just wrote.
+    the cluster's initial-admin Secret.
+    [Get admin access and platform facts](admin-access.md) gives the
+    backend flags and the exact `terraform output` commands. You do not
+    need them here: the `kubectl` form below needs only the kubeconfig
+    you just wrote.
 
 ## 4. Gate 1 — create the platform services cluster
 
