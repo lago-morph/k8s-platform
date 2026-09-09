@@ -169,6 +169,9 @@ CRD_URLS=(
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/iam.aws.m.upbound.io_rolepolicies.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accessentries.yaml"
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_accesspolicyassociations.yaml"
+  # kp-2al.4 (OI-2026-06-11-3) — the spoke's aws-ebs-csi-driver managed
+  # addon, composed by XSpokeAccess so observability PVCs can bind.
+  "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_addons.yaml"
   # Phase 5 — the per-cluster OIDC IdentityProviderConfig federating
   # kubectl auth to the Keycloak platform realm (REQ-AUTH-07).
   "https://raw.githubusercontent.com/crossplane-contrib/provider-upjet-aws/v2.5.0/package/crds/eks.aws.m.upbound.io_identityproviderconfigs.yaml"

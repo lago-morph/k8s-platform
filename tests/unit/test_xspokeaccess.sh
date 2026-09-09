@@ -91,10 +91,13 @@ PT='.spec.pipeline[] | select(.functionRef.name == "function-patch-and-transform
 assert_eq "comp_pt_step" "function-patch-and-transform" \
   "$(yq -r '.spec.pipeline[] | select(.functionRef.name=="function-patch-and-transform") | .functionRef.name' "$COMP")"
 
-# nine resources rendered (7 AWS + cluster-facts Observe Object +
-# spoke-cluster-secret Object — ADR-0010 PR-2; +eso-role/eso-policy,
-# the ADR-0005 ESO-baseline pair feeding the eso-role-arn contract key)
-assert_eq "comp_resource_count" "9" "$(yq -r "${PT}.resources | length" "$COMP")"
+# twelve resources rendered (10 AWS + cluster-facts Observe Object +
+# spoke-cluster-secret Object — ADR-0010 PR-2; +eso-role/eso-policy, the
+# ADR-0005 ESO-baseline pair feeding the eso-role-arn contract key;
+# +ebs-csi-role/ebs-csi-policy-attachment/ebs-csi-addon, the spoke-storage
+# trio — kp-2al.4 / OI-2026-06-11-3, gated in detail by
+# tests/unit/test_spoke_storage.sh)
+assert_eq "comp_resource_count" "12" "$(yq -r "${PT}.resources | length" "$COMP")"
 
 # env patches source the issuer from the OBSERVED cluster facts, not a
 # spec overlay (ADR-0010 PR-2 — reverses the auto-008 C2 input design)

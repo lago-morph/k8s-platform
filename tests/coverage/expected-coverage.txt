@@ -4,6 +4,7 @@ ec2.aws.m.upbound.io/SecurityGroup
 ec2.aws.m.upbound.io/SecurityGroupRule
 eks.aws.m.upbound.io/AccessEntry
 eks.aws.m.upbound.io/AccessPolicyAssociation
+eks.aws.m.upbound.io/Addon
 eks.aws.m.upbound.io/Cluster
 eks.aws.m.upbound.io/IdentityProviderConfig
 eks.aws.m.upbound.io/NodeGroup
