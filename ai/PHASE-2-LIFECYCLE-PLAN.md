@@ -15,7 +15,7 @@ contents of those removed workflow steps. Paste them inline.
 ## Confirmed before starting
 
 - **No Terraform touches phase 2 resources** after `terraform_data.argocd_bootstrap` in `terraform/management/helm.tf` fires (one-shot, ran at the end of phase-1 apply-and-verify). The XRDs, Compositions, Kyverno policy 09, and ClusterSecretStore all live behind ArgoCD-managed paths.
-- The `terraform_data.kyverno_audit_policies` resource still applies the 8 policies in `policies/audit/` — those are phase-1 audit policies that don't reference any platform abstraction kinds. PR #52 relocated the only phase-2-coupled policy (09) to `crossplane/policies/`, where it is ArgoCD-synced.
+- **Superseded 2026-09-09 (bead kp-2al.17):** `terraform_data.kyverno_audit_policies` used to apply the phase-1 audit policies in `policies/audit/`. The hub Kyverno install and that resource are gone; the policies are dormant in git (`policies/README.md`), reinstatement is kp-caz.1 (v2.0). PR #52 had already relocated the only phase-2-coupled policy (09) to `crossplane/policies/`, where it is ArgoCD-synced.
 - This means tear-down/rebuild of phase 2 is **purely a GitOps + kubectl operation**; Terraform state is untouched.
 
 ## Prerequisite: kubeconfig

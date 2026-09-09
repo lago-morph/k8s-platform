@@ -1,5 +1,13 @@
 # Kyverno audit-mode policies
 
+> **DORMANT — nothing in this directory is applied to any cluster.**
+> The hub Kyverno install was removed on 2026-09-09 (bead `kp-2al.17`);
+> reinstatement is bead `kp-caz.1` (v2.0). The manifests are kept
+> unchanged. See [`../README.md`](../README.md) for the ruling and the
+> full policy inventory. Everything below describes how the bundle
+> behaved **while Kyverno was installed**.
+
+
 These ClusterPolicies run in `validationFailureAction: Audit` mode — they
 do not block apply or admission, they only record violations as PolicyReport
 CRs and events. Use the `scripts/kyverno-violations.sh` helper to inspect

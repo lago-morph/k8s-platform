@@ -131,7 +131,7 @@ Resolved entries stay in the archived register for the rationale record.
 
 | Component | Expected today | After step 3 |
 |---|---|---|
-| hub Kyverno | installed, fix pending verification | removed (v2.0) |
+| hub Kyverno | removed (kp-2al.17); no `kyverno` namespace or pods | removed (v2.0); policies dormant in `policies/` |
 | spoke observability (prometheus, alertmanager, loki) | Degraded / Progressing (no storage) | Healthy with a Bound-PVC oracle |
 | `workload1-cluster` gate | OutOfSync by design | unchanged (fan-out exercised in step 5) |
 | Keycloak realm broker | absent on a live realm (IGNORE_EXISTING) | present on build #6, federation oracle PASS |

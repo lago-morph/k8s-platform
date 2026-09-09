@@ -44,7 +44,7 @@ variable "node_instance_type" {
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. 3 nodes for the management stack (Crossplane + 6 providers + functions + ESO + Kyverno + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
+  description = "Desired node count. 3 nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
   type        = number
   default     = 3
 }
@@ -228,8 +228,3 @@ variable "external_dns_version" {
   default     = "1.15.0"
 }
 
-variable "kyverno_version" {
-  description = "Kyverno Helm chart version (audit-mode policy engine)"
-  type        = string
-  default     = "3.2.6"
-}

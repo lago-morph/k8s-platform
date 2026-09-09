@@ -539,12 +539,9 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
           kind: DeploymentRuntimeConfig
           name: aws-provider-config
       MANIFEST
-      # Wait for the provider to install its CRDs before anything references the
-      # rds.aws.m.upbound.io/Instance kind. policies/audit/12 is a Kyverno
-      # ClusterPolicy that matches that CRD; Kyverno's validate-policy webhook
-      # rejects a policy whose matched kind has no resolvable GVR, so the kyverno
-      # policy apply (terraform_data.kyverno_audit_policies, which depends_on
-      # this resource) MUST run after the Instance CRD is Established.
+      # Wait for the provider to install its CRDs before anything references
+      # the rds.aws.m.upbound.io/Instance kind — the XDatabase Composition
+      # (phase 5) cannot reconcile until the Instance CRD is Established.
       KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds kubectl wait --for=condition=Healthy --timeout=300s \
         provider.pkg.crossplane.io/provider-aws-rds
       KUBECONFIG=/tmp/k8-platform-kubeconfig-crossplane_provider_aws_rds kubectl wait --for=condition=established --timeout=180s \
@@ -553,103 +550,6 @@ resource "terraform_data" "crossplane_provider_aws_rds" {
   }
 
   depends_on = [terraform_data.crossplane_aws_provider]
-}
-
-# ---- Kyverno (audit-mode policy engine) ----
-# Acts as a continuously-running assertion store: policies in policies/audit/
-# declare what "well-configured" looks like, and any drift (chart bump, hand
-# edit, Argo sync) surfaces in PolicyReport CRs and events without blocking
-# anything. See policies/audit/README.md for the full rationale.
-
-resource "helm_release" "kyverno" {
-  name             = "kyverno"
-  repository       = "https://kyverno.github.io/kyverno/"
-  chart            = "kyverno"
-  version          = var.kyverno_version
-  namespace        = "kyverno"
-  create_namespace = true
-  timeout          = 600
-  # Kyverno's admission webhook can race the API server during install on a
-  # cold cluster; wait=false lets terraform return as soon as the helm release
-  # is registered, and the e2e-verify pod check confirms readiness.
-  wait = false
-
-  # OI-2026-06-11-2 (found on the 2026-06-11 fresh-account build):
-  #   1. Chart 3.2.6 defaults every report-cleanup CronJob (and
-  #      webhooksCleanup) to docker.io/bitnami/kubectl:1.28.5, which the
-  #      Bitnami catalog pullback made unpullable (ImagePullBackOff on all
-  #      five jobs) — reports are NEVER cleaned.
-  #   2. With cleanup dead, accumulated reports OOM-kill the admission
-  #      controller (limit 384Mi; observed CrashLoopBackOff, OOMKilled
-  #      ~2.5 min after each start). Its webhook is fail-closed
-  #      (validate.kyverno.svc-fail), so every hub apply — including
-  #      Crossplane composite reconciles — errors during the down windows.
-  # Fix: pin the cleanup images to the relocated bitnamilegacy archive
-  # (same digest lineage, frozen tags) and give the admission controller
-  # OOM headroom. Render-pinned by tests/unit/test_helm_render.sh (no
-  # non-legacy bitnami/kubectl may appear in the rendered chart).
-  values = [
-    yamlencode({
-      admissionController = {
-        container = {
-          resources = {
-            limits = {
-              cpu    = "100m"
-              memory = "768Mi"
-            }
-          }
-        }
-      }
-      webhooksCleanup = {
-        image = { repository = "bitnamilegacy/kubectl" }
-      }
-      policyReportsCleanup = {
-        image = { repository = "bitnamilegacy/kubectl" }
-      }
-      cleanupJobs = {
-        admissionReports        = { image = { repository = "bitnamilegacy/kubectl" } }
-        clusterAdmissionReports = { image = { repository = "bitnamilegacy/kubectl" } }
-        ephemeralReports        = { image = { repository = "bitnamilegacy/kubectl" } }
-        clusterEphemeralReports = { image = { repository = "bitnamilegacy/kubectl" } }
-        updateRequests          = { image = { repository = "bitnamilegacy/kubectl" } }
-      }
-    })
-  ]
-
-  depends_on = [module.eks]
-}
-
-# Apply the audit-mode policy bundle from policies/audit/. Re-runs whenever
-# any policy file changes (triggered by a hash over the directory). Uses the
-# same local-exec pattern as the Crossplane provider config to avoid pulling
-# in the kubernetes terraform provider.
-resource "terraform_data" "kyverno_audit_policies" {
-  triggers_replace = [
-
-    # 2026-07-05: per-resource kubeconfig path (concurrent update-kubeconfig truncate race, build-#4 runs 28747505753/28749110239).
-
-    "per-resource-kubeconfig-2026-07-05",
-    sha1(join("", [for f in fileset("${path.module}/../../policies/audit", "*.yaml") : filesha1("${path.module}/../../policies/audit/${f}")])),
-  ]
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws eks update-kubeconfig \
-        --name ${module.eks.cluster_name} \
-        --region ${var.aws_region} \
-        --kubeconfig /tmp/k8-platform-kubeconfig-kyverno_audit_policies
-      KUBECONFIG=/tmp/k8-platform-kubeconfig-kyverno_audit_policies \
-        kubectl wait --for=condition=Available --timeout=300s \
-          -n kyverno deploy -l app.kubernetes.io/component=admission-controller
-      KUBECONFIG=/tmp/k8-platform-kubeconfig-kyverno_audit_policies \
-        kubectl apply -f ${path.module}/../../policies/audit/
-    EOT
-  }
-
-  # policies/audit/12 matches rds.aws.m.upbound.io/Instance; that CRD is
-  # installed by provider-aws-rds. Depend on it (which waits for the CRD to be
-  # Established) so Kyverno can resolve the GVR when the policy bundle applies.
-  depends_on = [helm_release.kyverno, terraform_data.crossplane_provider_aws_rds]
 }
 
 # ---- ArgoCD ----

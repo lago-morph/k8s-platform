@@ -32,7 +32,7 @@ module "eks" {
 
   # VPC-CNI as a managed addon with PREFIX DELEGATION. The account caps nodes at
   # t3.medium, whose default max-pods is ~17 (3 ENIs x 6 IPs). The management
-  # stack (Crossplane + 6 providers + functions + ESO + Kyverno + ArgoCD +
+  # stack (Crossplane + 6 providers + functions + ESO + ArgoCD +
   # ingress-nginx + external-dns) exhausts the pod-IP slots — both nodes were
   # observed at 3/3 ENIs and 18/18 IPs, so new pods (e.g. the ingress-nginx
   # kube-webhook-certgen hook Job) couldn't get an IP and failed to schedule,

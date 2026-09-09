@@ -14,12 +14,12 @@ kubectl get nodes -o wide 2>&1 | sed 's/^/  /'
 echo ""
 echo "── namespaces ─────────────────────────────────────────────────────"
 kubectl get ns 2>&1 \
-  | awk 'NR==1 || /^(argocd|crossplane-system|external-dns|external-secrets|ingress-nginx|kyverno)/' \
+  | awk 'NR==1 || /^(argocd|crossplane-system|external-dns|external-secrets|ingress-nginx)/' \
   | sed 's/^/  /'
 
 echo ""
 echo "── pod-state summary ──────────────────────────────────────────────"
-for ns in argocd crossplane-system external-dns external-secrets ingress-nginx kyverno; do
+for ns in argocd crossplane-system external-dns external-secrets ingress-nginx; do
   if kubectl get ns "$ns" >/dev/null 2>&1; then
     pods=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null)
     if [ -z "$pods" ]; then
@@ -38,7 +38,7 @@ done
 echo ""
 echo "── helm releases (across our namespaces) ──────────────────────────"
 helm list -A 2>&1 \
-  | awk 'NR==1 || $2 ~ /^(argocd|crossplane-system|external-dns|external-secrets|ingress-nginx|kyverno)$/' \
+  | awk 'NR==1 || $2 ~ /^(argocd|crossplane-system|external-dns|external-secrets|ingress-nginx)$/' \
   | sed 's/^/  /'
 
 echo ""
