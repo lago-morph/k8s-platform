@@ -1,7 +1,10 @@
 # ADR: Documentation is verified by fenced execution, not by review
 
 - **ID**: ADR-71c9304bbc
-- **Status**: Draft (not yet adopted to docs/decisions/)
+- **Status**: ADOPTED 2026-09-10 as [`docs/decisions/0018-documentation-is-verified-by-fenced-execution.md`](../../docs/decisions/0018-documentation-is-verified-by-fenced-execution.md)
+  — owner-directed. The adopted record is authoritative; this draft is kept as the
+  as-written artifact. The ID `ADR-71c9304bbc` is preserved in both and must not be
+  recomputed.
 - **Date**: 2026-09-10
 - **Source retrospective**: ../2026-09-10-267.md
 - **PRs covered**: #265, #266, #267
