@@ -1,0 +1,17 @@
+{
+  "apiVersion": "pkg.crossplane.io/v1beta1",
+  "kind": "DeploymentRuntimeConfig",
+  "metadata": {
+    "name": "aws-provider-config"
+  },
+  "spec": {
+    "serviceAccountTemplate": {
+      "metadata": {
+        "name": "upbound-provider-family-aws",
+        "annotations": {
+          "eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/k8-platform-mgmt-crossplane"
+        }
+      }
+    }
+  }
+}

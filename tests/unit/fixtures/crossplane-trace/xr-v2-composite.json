@@ -1,0 +1,132 @@
+{
+  "apiVersion": "platform.k8-platform.io/v1alpha1",
+  "kind": "XPlatformCluster",
+  "metadata": {
+    "name": "platform",
+    "namespace": "platform",
+    "uid": "00000000-0000-0000-0000-0000000000c1",
+    "generation": 2
+  },
+  "spec": {
+    "crossplane": {
+      "resourceRefs": [
+        {
+          "apiVersion": "acm.aws.m.upbound.io/v1beta1",
+          "kind": "CertificateValidation",
+          "name": "render-probe-cluster-88b4ceffbc75"
+        },
+        {
+          "apiVersion": "acm.aws.m.upbound.io/v1beta1",
+          "kind": "Certificate",
+          "name": "render-probe-cluster-132e67b41d9b"
+        },
+        {
+          "apiVersion": "ec2.aws.m.upbound.io/v1beta1",
+          "kind": "SecurityGroupRule",
+          "name": "render-probe-cluster-3d235ce5b1e9"
+        },
+        {
+          "apiVersion": "ec2.aws.m.upbound.io/v1beta1",
+          "kind": "SecurityGroupRule",
+          "name": "render-probe-cluster-81ea7144944e"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "AccessEntry",
+          "name": "render-probe-cluster-d1536b589257"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "AccessPolicyAssociation",
+          "name": "render-probe-cluster-3ba6f10847d3"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "Cluster",
+          "name": "render-probe-cluster-69f9d71223c3"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "IdentityProviderConfig",
+          "name": "render-probe-cluster-9cac40f74402"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "NodeGroup",
+          "name": "render-probe-cluster-b1150f7a0f66"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "RolePolicyAttachment",
+          "name": "render-probe-cluster-a15478035bd4"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "RolePolicyAttachment",
+          "name": "render-probe-cluster-a916859b9d9b"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "RolePolicyAttachment",
+          "name": "render-probe-cluster-ba923b07429d"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "RolePolicyAttachment",
+          "name": "render-probe-cluster-ffd8137bdb2b"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "Role",
+          "name": "render-probe-cluster-0bdb16c721e6"
+        },
+        {
+          "apiVersion": "iam.aws.m.upbound.io/v1beta1",
+          "kind": "Role",
+          "name": "render-probe-cluster-441cc3b1ccc8"
+        },
+        {
+          "apiVersion": "route53.aws.m.upbound.io/v1beta1",
+          "kind": "Record",
+          "name": "render-probe-cluster-ef1365dce72a"
+        }
+      ],
+      "compositionRef": {
+        "name": "platform-cluster"
+      },
+      "compositionRevisionRef": {
+        "name": "platform-cluster-8f2a1c4"
+      }
+    },
+    "dns": {
+      "subdomain": "platform"
+    },
+    "name": "render-probe",
+    "nodeGroup": {
+      "desiredSize": 2,
+      "instanceTypes": [
+        "t3.medium"
+      ],
+      "maxSize": 3,
+      "minSize": 1
+    },
+    "region": "us-east-1",
+    "version": "1.32"
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Synced",
+        "status": "True",
+        "reason": "ReconcileSuccess",
+        "message": ""
+      },
+      {
+        "type": "Ready",
+        "status": "True",
+        "reason": "Available",
+        "message": ""
+      }
+    ]
+  }
+}

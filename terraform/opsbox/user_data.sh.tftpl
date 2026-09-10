@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Ops box first boot. Everything here is idempotent and re-runnable, because
+# `scripts/opsbox/refresh.sh` on the box runs the same steps against a newer
+# checkout.
+#
+# The repository is PUBLIC, which is the whole reason this box needs no
+# credentials: no GitHub token, no deploy key, nothing to leak.
+set -euxo pipefail
+
+exec > >(tee -a /var/log/opsbox-bootstrap.log) 2>&1
+echo "=== opsbox bootstrap starting $(date -u +%FT%TZ) ==="
+
+dnf install -y git jq tar gzip unzip which findutils procps-ng bind-utils
+
+CHECKOUT=/opt/k8-platform
+if [ ! -d "$CHECKOUT/.git" ]; then
+  git clone --branch "${repo_ref}" "${repo_url}" "$CHECKOUT"
+else
+  git -C "$CHECKOUT" fetch --all --prune
+  git -C "$CHECKOUT" checkout "${repo_ref}"
+  git -C "$CHECKOUT" pull --ff-only
+fi
+
+# The pinned toolchain, from the repository's own installer, so the box and CI
+# never disagree about a tool version. versions.env is the single source of
+# truth and this script reads it.
+bash "$CHECKOUT/scripts/sandbox-setup.sh"
+
+# Make the checkout usable by the Session Manager shell user, which is
+# ssm-user rather than root.
+chown -R ssm-user:ssm-user "$CHECKOUT" 2>/dev/null || true
+
+# Land every operator in the checkout with the bring-up scripts on PATH, so the
+# first thing a browser shell can do is ask for status.
+cat > /etc/profile.d/k8-platform.sh <<'PROFILE'
+export K8_PLATFORM_ROOT=/opt/k8-platform
+export PATH="$K8_PLATFORM_ROOT/scripts/opsbox:$PATH"
+export AWS_PAGER=""
+cd "$K8_PLATFORM_ROOT" 2>/dev/null || true
+PROFILE
+chmod 0644 /etc/profile.d/k8-platform.sh
+
+touch /var/lib/opsbox-ready
+echo "=== opsbox bootstrap complete $(date -u +%FT%TZ) ==="

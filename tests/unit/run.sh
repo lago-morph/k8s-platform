@@ -184,6 +184,31 @@ run_suite tests/unit/test_no_placeholder_runtime_values.sh
 run_suite tests/unit/test_aws_text_bool_compare.sh
 run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
 
+# kp-du3: the beads bootstrap must work from the SHALLOW clone a web sandbox
+# gets; when it does not, the session starts with no task graph and the
+# prepush guard blocks every push.
+run_suite tests/unit/test_beads_sync_shallow_bootstrap.sh
+
+# kp-2al.24: operator guidance must confirm a gate sync by the completed
+# OPERATION, never by .status.sync.revision (which Argo sets from the observed
+# target revision, so it reads correct for a gate that never synced).
+run_suite tests/unit/test_gate_sync_confirmation.sh
+
+# kp-2al.22: the finished-platform inventory is the build oracle; its per-spoke
+# Application names must be the ones argocd/apps/spoke/ actually generates.
+run_suite tests/unit/test_finished_platform_inventory.sh
+
+# kp-2al.16: the database ticket runbook is what a step-5 scenario automates
+# from — its manifests must still match the XRD, the Keycloak precedent, and
+# each other (admin push and tenant pull must address one ASM key).
+run_suite tests/unit/test_database_request_runbook.sh
+
+# kp-2al.34: the ops-box bring-up scripts decide on the operator's behalf
+# whether a stage is green, so a check that is wrong optimistically is worse
+# than no check. Also guards the "ask the world, never GitHub" design rule and
+# that every terraform module is in the validate matrix.
+run_suite tests/unit/test_opsbox_bringup.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated

@@ -1,0 +1,46 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "metadata": {
+        "name": "crossplane-6b8d9f7c5-abcde",
+        "namespace": "crossplane-system",
+        "labels": {
+          "app": "crossplane"
+        }
+      },
+      "spec": {
+        "serviceAccountName": "crossplane"
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [
+          {
+            "restartCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "metadata": {
+        "name": "crossplane-rbac-manager-5f4c8d9b6-fghij",
+        "namespace": "crossplane-system",
+        "labels": {
+          "app": "crossplane-rbac-manager"
+        }
+      },
+      "spec": {
+        "serviceAccountName": "rbac-manager"
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [
+          {
+            "restartCount": 0
+          }
+        ]
+      }
+    }
+  ]
+}

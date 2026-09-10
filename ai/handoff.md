@@ -13,18 +13,21 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
 | Fact | Value | Evidence |
 |---|---|---|
-| `main` | `3298e70f614d793f040ea4d6b97c4455cfe028b9` (the SHA build #7 was built from) | `git log` |
+| `main` | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` (PR #269, ADR-0018) — the SHA build #8 is being built from | `git log` |
 | Clean builds proven | seven (#1–#7); rows 1–9 evidenced 4×–6× | `SUBSTRATE-READINESS.md` |
 | Rows 10/11 | DONE on clean builds #6 and #7 (federation + federated kubectl; RUN_IDs `build6-2220`, `build7-0152`); build #6's not-a-single-SHA caveat retired by #7 on the platform half | `SUBSTRATE-READINESS.md` |
-| AWS account | same rotated Pluralsight sandbox, torn down to nothing and rebuilt by build #7 | creds probe 34421037502, `scripts/whereami.sh` |
-| GHA secrets | valid for that account | creds probe 34421037502 (creds 3/3, zone 4/4; state-backend 2/2 because the teardown left the backend behind) |
+| AWS account | ROTATED to `439891535995`, us-east-1 — a genuinely NEW account, not a reset one: no state bucket, no lock table, no resources | creds probe 34506884919, `scripts/whereami.sh` | <!-- noqa: account-id - run provenance, account rotates -->
+| GHA secrets | valid for the new account | creds probe 34506884919 (creds 3/3 naming the account above, zone 4/4 `<account-id>.realhandsonlabs.net.`, state-backend 0/2 — the RED that is the documented pass signal on a fresh account) |
+| Owner ruling 2026-09-10 | this account is spendable: the owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so build #8 does not consume what that bead measures. Leave this one cleaned up | owner, this session |
 | CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34421097160 / 34421376617 / 34428165725 |
 | Jentic bridge | still works; hosted execution ends 2026-09-20; only needed for `.github/workflows/**` writes | `mcp__Jentic__list_credentials` deprecation notice |
 | Sandbox git push | branch create + force-with-lease OK; non-branch refs and branch deletes HTTP 403 | probes 2026-09-08 (`ai/environment.md` §2) |
 | Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion (bead `kp-2al.31`) | — |
 | Latest evidence on the branch | live-verify success at PR #267's head `5ac400c`, and the fail-closed live-evidence gate green at the same SHA | 34430738213, 34432226978 |
 | PR #267 | open, mergeable, unit tests green — carries build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | `gh` PR view |
-| Account after this session | expected to ROTATE. The build #7 platform was still standing when the session ended; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Assume nothing until `scripts/whereami.sh` says otherwise | — |
+| PR #270 | open — step 3 Phase A: `kp-du3`, `kp-2al.28` (static half), `kp-2al.24`, `kp-2al.22`, the teardown runbook (`kp-2al.30`) and the database scenario-ready check (`kp-2al.16`). Touches no live-evidence-gated path | PR #270 |
+| Account at the end of this session | `439891535995` was built (#8) and torn back down to nothing, state backend included — verified empty by the operator. The owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so this one is spent, not reserved | teardown block below | <!-- noqa: account-id - run provenance, account rotates -->
+| Account after this session | expected to ROTATE. Assume nothing until `scripts/whereami.sh` says otherwise; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) | — |
 
 ## Environment state
 
@@ -33,6 +36,43 @@ until `scripts/whereami.sh` and the live API prove otherwise. When a
 build is in progress, record the chain here as facts (probe → base →
 management → gate SHAs → oracle RUN_ID → live-verify run ID) and move
 them into `SUBSTRATE-READINESS.md` when the build completes.
+
+Build #8 state as verified 2026-09-10 (NEW account, us-east-1 — a
+genuinely fresh account, not a reset one; built entirely from `main`
+`65778961ee4ea25fd8681b4177f1e4dca06d9ac4`, single SHA for probe, base,
+management and BOTH gate syncs):
+
+| Phase | State | Run ID / SHA |
+|---|---|---|
+| probe (`test`/`test-e2e`) | conclusion failure BY DESIGN — creds 3/3, zone 4/4, state-backend **0/2** (bucket and table absent before bootstrap). This is the RED the bring-up page predicts for a fresh account, and the first build able to demonstrate it: #7 came out green because its teardown left the backend behind | 34506884919 |
+| base | success, apply 17:15:04Z–17:17:19Z, **3m21s** (page reference 3m23s) | 34506951822 |
+| management | success, apply 17:18:20Z–17:38:35Z, **20m15s**; `[management] e2e-verify` green and `[management] argocd-url` green (it went red on #7) | 34507332116 |
+| hub cluster | EKS `k8-platform-mgmt` ACTIVE 17:32:11Z (control plane ~14 min); node group ACTIVE 17:35:03Z; 4 running instances at that point (3 hub + relay) | operator measurement |
+| bootstrap fan-out | 8 hub Applications; the three transient OutOfSync ones (`crossplane-resources`, `keycloak-db`, `keycloak-secrets`) settled by 17:46:38Z, ~8 min after management — as the page's F4 correction states | operator measurement |
+| gate 1 (platform-cluster-claim) | patched 17:47:00Z at the explicit SHA; `.status.operationState.phase=Succeeded`, `syncResult.revision` = that SHA, `sync.status=Synced` — the kp-2al.24 corrected check, exercised live | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` |
+| gate 1 duration | four facts published 17:57:42Z, node group Ready 18:00:48Z — **13m48s** from sync, BELOW the page's stated 15–25 min range (third data point: 15 on #6, 24 on #7, 13.8 on #8) | operator measurement |
+| gate 2 (spoke-access) | patched 18:01:11Z, same SHA; `operationState.phase=Succeeded` at that SHA; registration Secret `platform-spoke` carried all six `k8-platform.io/*` annotations within 40 s; XSpokeAccess Ready 18:06:33Z, **5m22s** | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` |
+| Argo CD apps | 17 Applications, all Synced/Healthy except `workload1-cluster` (OutOfSync by design), converged 18:05:18Z. Live names are exactly the `spoke-*` set plus `hub-observability-alloy` — live confirmation of the kp-2al.22 inventory correction | operator measurement |
+| composites | 5: `xplatformcluster`, `xdatabase/keycloak-db`, 2× `xplatformsecret` all Synced+Ready; `xspokeaccess` Ready at 18:06:33Z | operator measurement |
+| behavioural gate | `hello.platform.<domain>` HTTP 200, body `hello from the k8-platform platform-services cluster`; Argo CD HTTP 200 | operator measurement (TLS validated against the intercepting egress gateway, not the ACM chain) |
+| kp-2al.28 live confirmation | on `XPlatformCluster platform/platform`: `.spec.resourceRefs` EMPTY, `.spec.crossplane.resourceRefs` = 16, and the fixed `scripts/crossplane-trace.sh` printed `resourceRefs (16 total)` with per-resource conditions and `compRef=platform-cluster-aws` | operator measurement 17:48:32Z |
+| kp-2al.8 before-state | `keycloak-db` uid `1b25b14f-56f9-4bb8-a473-b66a3c525f99` and `keycloak-db-master` uid `e6236c2f-4f55-44c3-98a0-54c9f7af14be`, BOTH ownerReferenced to `Instance/keycloak-db-41f61ab935ae` uid `35017b49-870a-4414-8830-06d1861c0491` | operator measurement 18:06Z |
+| not verified on this build | **Keycloak OIDC discovery — not attempted against the right host.** The operator probed `keycloak.platform.<domain>`, which the platform never publishes; the SSO host is `auth.platform.<domain>` (the bring-up page's verification check 4 names it, and its A record was present in the zone by 18:19Z alongside `hello.platform`, `grafana.platform` and `argocd.management`). By the time the wrong hostname was identified the teardown had begun, so the check was not run. This is an operator error, not a platform or documentation gap. The federation oracles and live-verify were likewise not dispatched (rows 10/11 are already DONE 2×, and this account's remaining budget went to the teardown validation). Also unverified: Argo CD browser sign-in, direct ACM-chain validation from the sandbox | — |
+
+Build #8 TEARDOWN, executed 2026-09-10 18:11Z-19:12Z as a FENCED
+validation of `docs/site/how-to/tear-the-platform-down.md` (ADR-0018):
+the agent was given that page and nothing else from this repository.
+
+| Item | Result |
+|---|---|
+| account end state (verified by the operator, not only by the agent) | 0 EKS, 0 load balancers, 0 RDS, 0 running EC2, 0 EBS volumes, 0 non-default VPCs, 0 NAT gateways, no `k8-platform-*` IAM roles, state bucket and lock table both absent |
+| destroy runs | management 34516300481 (13m43s), base 34517977976 (1m36s) |
+| findings | 15; 14 folded into the page (commit 9829c1a), 1 rejected on triage |
+| the two serious ones | stage order was wrong — Argo must be stopped BEFORE the LoadBalancer Services or a THIRD NLB is created; and ApplicationSets were unmentioned, though nine of seventeen Applications regenerate about a second after deletion |
+| the expensive one | three `available` gp3 volumes totalling 22 GiB survived a teardown that passed every check the page had. The operator deleted them; the page now removes the claims and checks `describe-volumes` |
+| rejected on triage | the surviving Route53 hosted zone is PRE-EXISTING (the account ships with it and the build discovers it); deleting it would break the next bring-up. The page says so rather than removing it |
+| `kp-2al.8` settled | both `keycloak-db` Secrets were garbage-collected when their owning RDS Instance MR went; the OI-2026-06-06-3 defect does not exist on this stack. UIDs in the bead |
+| fence integrity | the agent reported it read only the page, but that a catalogue of repository skill descriptions was auto-injected into its context. Weaker isolation than build #7's; every correction traces to live output it observed, not to that catalogue |
 
 Build #7 state as verified 2026-09-10 (same account as build #6,
 `801822495028`, us-east-1 — emptied to nothing after build #6 and rebuilt <!-- noqa: account-id - run provenance, account rotates -->

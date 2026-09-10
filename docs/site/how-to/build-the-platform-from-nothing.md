@@ -553,12 +553,15 @@ build #6.
     No deadlock, and no retry loop.
 
 **Budget:** the four facts plus a Ready node group took about **15
-minutes** from the sync on build #6 and about **24 minutes** on build #7
-(sync 00:55:00Z, complete around 01:19Z); on build #5 the XR reached
-Synced+Ready in 21 minutes. So: **15 to 25 minutes is normal on the
-builds measured so far.** This is the longest wait in the build. If
-nothing has advanced after about 35 minutes, trace it (step 8) — do not
-sync again, and do not delete anything.
+minutes** from the sync on build #6, about **24 minutes** on build #7
+(sync 00:55:00Z, complete around 01:19Z) and **13m48s** on build #8
+(sync 17:47:00Z, four facts 17:57:42Z, node group Ready 18:00:48Z); on
+build #5 the XR reached Synced+Ready in 21 minutes. So: **roughly 14 to
+25 minutes is normal on the builds measured so far**, and the spread is
+wide enough that a fast run is not a sign anything was skipped. This is
+the longest wait in the build. If nothing has advanced after about 35
+minutes, trace it (step 8) — do not sync again, and do not delete
+anything.
 
 ## 6. Gate 2 — register the spoke with the hub
 
@@ -786,7 +789,7 @@ For a stuck gate-1 cluster, the useful one is
 
 | Spot | Budget | What it means |
 |---|---|---|
-| Spoke EKS cluster + node group (gate 1) | 15–25 min to the four facts on the builds measured so far (15 min on build #6, about 24 min on build #7) | The longest wait in the build. Past about 35 min with no change, trace it |
+| Spoke EKS cluster + node group (gate 1) | roughly 14–25 min to the four facts on the builds measured so far (13m48s on build #8, 15 min on #6, about 24 min on #7) | The longest wait in the build. Past about 35 min with no change, trace it |
 | The Argo CD hostname after the management build | 5 min for ExternalDNS to write the Route53 record | `[management] argocd-url` is `continue-on-error`, so it reports green even when its log says `FAIL: ... HTTP 000` — read the log, not the colour. DNS and the load balancer often settle afterwards (about 4 min later on build #7) |
 | The hello endpoint after `spoke-hello` goes Healthy | 5 min (the repository's own oracle polls for 300 s) | Past that, suspect the load balancer's health, ingress routing, or the certificate, in that order |
 | Keycloak's OIDC discovery endpoint | 10 min (the oracle polls for 600 s) | Keycloak starts after its database and its secrets; it is the last thing to come up |
@@ -829,6 +832,20 @@ imperative by necessity:
 | Management apply | It creates the GitOps controller itself, so it cannot be GitOps |
 | `platform-cluster-claim` sync | Synchronizing it provisions a real EKS cluster; auto-sync would mean a typo fix starts a cluster |
 | `spoke-access` sync | It grants real AWS access and must observe the cluster's published facts, so auto-sync would race the provision |
+
+## When you are done with this account
+
+Taking it back to nothing is its own ordered procedure, and doing it in
+the wrong order strands paid resources — an orphaned load balancer keeps
+the ACM certificate in use, and the certificate's managed resource then
+wedges. See
+[Tear the platform down to nothing](tear-the-platform-down.md).
+
+Note especially that a torn-down account is **not** the same as a fresh
+one: the Terraform state bucket and the DynamoDB lock table are
+bootstrapped outside Terraform and survive. If you intend to run *this*
+page again on the same account, delete them first, or the credential
+probe in step 1 will come out green where this page predicts red.
 
 ---
 

@@ -25,6 +25,28 @@ line and `bd ready`. Every prompt injects the status line. Every assistant
 turn end (Stop), every compaction, and every `git push` push unpushed beads;
 a failed beads push blocks the code push. You never run `bd dolt push`.
 
+## If the session starts with no task graph
+
+`bd ready` answering `no beads database found` means SessionStart's bootstrap
+died, and `.claude/hooks/beads-prepush-guard.sh` will refuse every `git push`
+until it is fixed. Recovery, in order:
+
+```bash
+bash scripts/beads-sync.sh bootstrap   # re-run it; it prints why it failed
+bd ready                               # confirm the graph is back
+```
+
+If bootstrap dies with `cannot seed mirror with a branch`, you are on a `bd`
+older than the kp-du3 fix or a patched-out `scripts/beads-sync.sh`: the sandbox
+clones this repository shallow and git rejects pushing shallow history.
+`git fetch --unshallow origin` then re-run bootstrap. The supported fix is in
+`seed_mirror()` (never push `HEAD` into the mirror); the regression test is
+`tests/unit/test_beads_sync_shallow_bootstrap.sh`.
+
+Never work around a dead graph by editing beads by hand or by bypassing the
+prepush guard — un-synced task state stranded behind a merged PR is exactly
+what the guard exists to prevent.
+
 ## Working a bead
 
 1. `bd ready` → pick the highest-priority item that is yours to do.
