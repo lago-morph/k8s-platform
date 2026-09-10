@@ -277,6 +277,39 @@ assert_eq "destination: guard fires with matching reason => pass (0)" \
   "$(run_check_rc "$DESTGUARD" LIVE_MODE=mutating $POLL_OVERRIDE)"
 
 echo ""
+echo "── destination: (b2) PASSES on Argo's REAL destination wording ───────"
+# kp-2al.27: Argo phrases a DESTINATION violation differently from a repo one.
+# Measured live on build #7 (2026-09-10), verbatim:
+#   InvalidSpecError: application destination server 'https://kubernetes.default.svc'
+#   and namespace 'default' do not match any of the allowed destinations in
+#   project 'platform-spoke'
+# The check used to match only "not permitted", the REPO wording, so it was a
+# false negative: it called an effective guard ineffective, and could not have
+# detected a real breach either. This case pins the server's actual string.
+write_kubectl '
+CMD="$*"
+case "$CMD" in
+  "get ns argocd") echo "argocd   Active"; exit 0 ;;
+  "get appproject platform-spoke -n argocd -o json")
+    printf '"'"'{"spec":{"sourceRepos":["https://github.com/lago-morph/k8-platform.git"]}}\n'"'"'
+    exit 0 ;;
+  "get appproject platform-spoke -n argocd") echo "platform-spoke   project.argoproj.io"; exit 0 ;;
+  "apply -f -")
+    content="$(cat)"
+    if printf "%s" "$content" | grep -q "live-neg-dest-deny"; then
+      echo "error: application destination server '"'"'https://kubernetes.default.svc'"'"' and namespace '"'"'default'"'"' do not match any of the allowed destinations in project '"'"'platform-spoke'"'"'"
+      exit 1
+    fi
+    echo "application.argoproj.io created"; exit 0 ;;
+  delete*|*"--ignore-not-found"*) exit 0 ;;
+  *) exit 0 ;;
+esac
+'
+assert_eq "destination: Argo's real destination wording => pass (0)" \
+  "$LIVE_RC_PASS" \
+  "$(run_check_rc "$DESTGUARD" LIVE_MODE=mutating $POLL_OVERRIDE)"
+
+echo ""
 echo "── destination: (c) FAILS when guard does NOT fire ──────────────────"
 write_kubectl '
 CMD="$*"

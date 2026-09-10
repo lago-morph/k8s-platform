@@ -6,7 +6,14 @@
 #   are scoped to spoke clusters by NAME (*-spoke); the hub in-cluster
 #   server (https://kubernetes.default.svc) is EXPLICITLY excluded.
 #   An Application in the platform-spoke project that targets the hub
-#   must be rejected: "is not permitted in project platform-spoke".
+#   must be rejected. Argo phrases a DESTINATION violation differently from a
+#   source-repo one: measured live on build #7 (2026-09-10) the condition is
+#     InvalidSpecError: application destination server '<hub>' and namespace
+#     '<ns>' do not match any of the allowed destinations in project 'platform-spoke'
+#   whereas a repo violation says "is not permitted in project". Matching only
+#   the repo wording made this check a FALSE NEGATIVE: it reported the guard
+#   ineffective while the guard was firing, and could never have detected a real
+#   destination breach either (kp-2al.27).
 #
 # Red-first discipline:
 #   (a) DENIED: apply an Application in project platform-spoke with
@@ -115,17 +122,17 @@ DENY_RC=$?
 
 DENIED_REASON=""
 
-if echo "$DENY_OUT" | grep -qiE "not permitted|not allowed in project"; then
-  DENIED_REASON="$(echo "$DENY_OUT" | grep -iE "not permitted|not allowed in project" | head -1)"
+if echo "$DENY_OUT" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
+  DENIED_REASON="$(echo "$DENY_OUT" | grep -iE "not permitted|not allowed in project|do not match any of the allowed destinations" | head -1)"
   log "ArgoCD admission webhook rejected the Application immediately"
 elif [ "$DENY_RC" -eq 0 ]; then
   log "Application admitted; polling ArgoCD conditions for guard error (up to $((POLL_ITERS * 2))s)..."
   for _ in $(seq 1 "$POLL_ITERS"); do
     COND=$(KUBE get application "$APP_DENY" -n "$NS" -o json 2>/dev/null \
            | jq -r '[.status.conditions[]?.message // ""] | join("|")' 2>/dev/null || true)
-    if echo "$COND" | grep -qiE "not permitted|not allowed in project"; then
+    if echo "$COND" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
       DENIED_REASON="$(echo "$COND" | tr '|' '\n' \
-        | grep -iE "not permitted|not allowed in project" | head -1)"
+        | grep -iE "not permitted|not allowed in project|do not match any of the allowed destinations" | head -1)"
       break
     fi
     sleep 2
@@ -133,11 +140,11 @@ elif [ "$DENY_RC" -eq 0 ]; then
 fi
 
 if [ -z "$DENIED_REASON" ]; then
-  ng "GUARD DID NOT FIRE: Application '$APP_DENY' with hub destination '$HUB_SERVER' was not rejected and showed no 'not permitted' condition within $((POLL_ITERS * 2))s — AppProject platform-spoke destination guard is not effective"
+  ng "GUARD DID NOT FIRE: Application '$APP_DENY' with hub destination '$HUB_SERVER' was not rejected and showed no destination-denied condition within $((POLL_ITERS * 2))s — AppProject platform-spoke destination guard is not effective"
   exit 1
 fi
 
-if echo "$DENIED_REASON" | grep -qiE "not permitted|not allowed in project"; then
+if echo "$DENIED_REASON" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
   ok "GUARD FIRED: hub destination rejected in platform-spoke — reason: $DENIED_REASON"
 else
   ng "Denied, but reason does NOT match the platform-spoke destination guard (expected 'not permitted in project'): $DENIED_REASON"
