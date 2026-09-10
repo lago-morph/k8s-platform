@@ -203,6 +203,12 @@ run_suite tests/unit/test_finished_platform_inventory.sh
 # each other (admin push and tenant pull must address one ASM key).
 run_suite tests/unit/test_database_request_runbook.sh
 
+# kp-2al.34: the ops-box bring-up scripts decide on the operator's behalf
+# whether a stage is green, so a check that is wrong optimistically is worse
+# than no check. Also guards the "ask the world, never GitHub" design rule and
+# that every terraform module is in the validate matrix.
+run_suite tests/unit/test_opsbox_bringup.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated
