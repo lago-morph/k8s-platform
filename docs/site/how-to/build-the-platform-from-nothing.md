@@ -208,6 +208,25 @@ Press the green **Run workflow** button.
     on a fresh account — Route53 4/4 PASS, state-backend 2 FAIL (both
     `head-bucket` and `describe-table` returning 254).
 
+!!! warning "A torn-down account is not a fresh account"
+    The Terraform state bucket and the DynamoDB lock table are
+    bootstrapped **outside** Terraform, so `action=destroy` does not
+    remove them. If you are rebuilding an account that has run this
+    platform before, the state-backend suite **passes** and the whole
+    probe goes green — the opposite of the signature above.
+
+    Measured: on build #7 (2026-09-10), a rebuild of a torn-down
+    account, the probe was green in 19 s with all three suites passing.
+    That is not a contradiction of this page and not a defect; it means
+    the backend was already there.
+
+    To exercise this page as written, delete the bucket
+    `k8-platform-tfstate-<account-id>` and the table
+    `k8-platform-tfstate-lock` before you start, so the account really
+    is empty. The teardown procedure that should leave an account in a
+    known state is tracked as `kp-2al.30`; until that page exists, treat
+    a reused account as a known divergence rather than a finding.
+
 What a *real* problem looks like in this run:
 
 - the credentials suite failing — the secrets are wrong, missing, or the
@@ -785,10 +804,19 @@ For a stuck gate-1 cluster, the useful one is
 - Read the failed run's summary comment or step log *before* changing
   anything — the verify steps print the specific assertion that failed.
 
-Tearing the platform down again is out of scope for this page:
-`action=destroy` exists per phase, but an orderly teardown deletes the
-composite resources first and waits for deprovisioning, then works
-downward, and it has rules of its own.
+Tearing the platform down again is out of scope for this page, and it
+has more rules than it looks. `action=destroy` exists per phase, but the
+order matters and two of the obvious progress signals lie: deleting a
+composite resource returns in about two seconds while the cluster,
+database and roles are all still live, and `kubectl get managed` does
+not list namespaced v2 managed resources, so it reads empty mid-delete.
+Deleting a cluster before its `LoadBalancer` Services also orphans the
+load balancer, which then keeps the ACM certificate in use and blocks
+the rest of the teardown. The ordered procedure, with the budgets each
+stage actually takes, is tracked as `kp-2al.30`; the findings behind it
+are recorded in `kp-2al.21`. Do not improvise a teardown from
+`action=destroy` alone — and remember that the state bucket and lock
+table survive it (see the warning in step 1).
 
 ## Why the build looks like this
 

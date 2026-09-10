@@ -2,7 +2,10 @@
 
 Verified state only (run IDs, SHAs, PR numbers, account shape). Open work
 and next actions live in beads: `bd ready`. The plan and the definition
-of "feature complete" live in `ai/roadmap.md`. Keep this file short:
+of "feature complete" live in `ai/roadmap.md`. **The ordered plan for
+step 3 — which beads need no AWS account, which need a live platform,
+which are the owner's alone, and what order holds an account for the
+shortest time — is in the epic: `bd show kp-2al`.** Keep this file short:
 replace stale facts, never append narrative. The pre-2026-09-08 handoff
 is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
@@ -18,7 +21,10 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 | CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34421097160 / 34421376617 / 34428165725 |
 | Jentic bridge | still works; hosted execution ends 2026-09-20; only needed for `.github/workflows/**` writes | `mcp__Jentic__list_credentials` deprecation notice |
 | Sandbox git push | branch create + force-with-lease OK; non-branch refs and branch deletes HTTP 403 | probes 2026-09-08 (`ai/environment.md` §2) |
-| Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion | — |
+| Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion (bead `kp-2al.31`) | — |
+| Latest evidence on the branch | live-verify success at PR #267's head `5ac400c`, and the fail-closed live-evidence gate green at the same SHA | 34430738213, 34432226978 |
+| PR #267 | open, mergeable, unit tests green — carries build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | `gh` PR view |
+| Account after this session | expected to ROTATE. The build #7 platform was still standing when the session ended; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Assume nothing until `scripts/whereami.sh` says otherwise | — |
 
 ## Environment state
 
