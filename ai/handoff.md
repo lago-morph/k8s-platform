@@ -16,8 +16,8 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 | `main` | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` (PR #269, ADR-0018) — the SHA build #8 is being built from | `git log` |
 | Clean builds proven | seven (#1–#7); rows 1–9 evidenced 4×–6× | `SUBSTRATE-READINESS.md` |
 | Rows 10/11 | DONE on clean builds #6 and #7 (federation + federated kubectl; RUN_IDs `build6-2220`, `build7-0152`); build #6's not-a-single-SHA caveat retired by #7 on the platform half | `SUBSTRATE-READINESS.md` |
-| AWS account | ROTATED to `439891535995`, us-east-1 — a genuinely NEW account, not a reset one: no state bucket, no lock table, no resources | creds probe 34506884919, `scripts/whereami.sh` |
-| GHA secrets | valid for the new account | creds probe 34506884919 (creds 3/3 naming `439891535995`, zone 4/4 `439891535995.realhandsonlabs.net.`, state-backend 0/2 — the RED that is the documented pass signal on a fresh account) |
+| AWS account | ROTATED to `439891535995`, us-east-1 — a genuinely NEW account, not a reset one: no state bucket, no lock table, no resources | creds probe 34506884919, `scripts/whereami.sh` | <!-- noqa: account-id - run provenance, account rotates -->
+| GHA secrets | valid for the new account | creds probe 34506884919 (creds 3/3 naming the account above, zone 4/4 `<account-id>.realhandsonlabs.net.`, state-backend 0/2 — the RED that is the documented pass signal on a fresh account) |
 | Owner ruling 2026-09-10 | this account is spendable: the owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so build #8 does not consume what that bead measures. Leave this one cleaned up | owner, this session |
 | CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34421097160 / 34421376617 / 34428165725 |
 | Jentic bridge | still works; hosted execution ends 2026-09-20; only needed for `.github/workflows/**` writes | `mcp__Jentic__list_credentials` deprecation notice |
