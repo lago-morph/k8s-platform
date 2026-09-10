@@ -6,16 +6,16 @@ of "feature complete" live in `ai/roadmap.md`. Keep this file short:
 replace stale facts, never append narrative. The pre-2026-09-08 handoff
 is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
-## Verified 2026-09-09
+## Verified 2026-09-10
 
 | Fact | Value | Evidence |
 |---|---|---|
-| `main` | `96279fd1d5a6fb5d852671e0211aa8c3e7fc9404` (PR #265 merged) | `git log` |
-| Clean builds proven | six (#1–#6); rows 1–9 evidenced 3×–5× | `SUBSTRATE-READINESS.md` |
-| Rows 10/11 | DONE on clean build #6 (federation + federated kubectl, RUN_ID `build6-2220`) | `SUBSTRATE-READINESS.md` |
-| AWS account | rotated Pluralsight sandbox, built out by build #6 | creds probe 34396268449, `scripts/whereami.sh` |
-| GHA secrets | valid for that account | creds probe 34396268449 (zone 4/4 PASS; state-backend 2 FAIL = expected pre-bootstrap) |
-| CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34396955442 / 34397369089 / 34412419016 |
+| `main` | `3298e70f614d793f040ea4d6b97c4455cfe028b9` (the SHA build #7 was built from) | `git log` |
+| Clean builds proven | seven (#1–#7); rows 1–9 evidenced 4×–6× | `SUBSTRATE-READINESS.md` |
+| Rows 10/11 | DONE on clean builds #6 and #7 (federation + federated kubectl; RUN_IDs `build6-2220`, `build7-0152`); build #6's not-a-single-SHA caveat retired by #7 on the platform half | `SUBSTRATE-READINESS.md` |
+| AWS account | same rotated Pluralsight sandbox, torn down to nothing and rebuilt by build #7 | creds probe 34421037502, `scripts/whereami.sh` |
+| GHA secrets | valid for that account | creds probe 34421037502 (creds 3/3, zone 4/4; state-backend 2/2 because the teardown left the backend behind) |
+| CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34421097160 / 34421376617 / 34428165725 |
 | Jentic bridge | still works; hosted execution ends 2026-09-20; only needed for `.github/workflows/**` writes | `mcp__Jentic__list_credentials` deprecation notice |
 | Sandbox git push | branch create + force-with-lease OK; non-branch refs and branch deletes HTTP 403 | probes 2026-09-08 (`ai/environment.md` §2) |
 | Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion | — |
@@ -28,20 +28,29 @@ build is in progress, record the chain here as facts (probe → base →
 management → gate SHAs → oracle RUN_ID → live-verify run ID) and move
 them into `SUBSTRATE-READINESS.md` when the build completes.
 
-Build #6 state as verified 2026-09-09 (account `801822495028`, us-east-1, <!-- noqa: account-id - run provenance, account rotates -->
-Route53 zone `Z08868662UCA0EHI3H5KH` / `801822495028.realhandsonlabs.net`): <!-- noqa: account-id - run provenance, account rotates -->
+Build #7 state as verified 2026-09-10 (same account as build #6,
+`801822495028`, us-east-1 — emptied to nothing after build #6 and rebuilt <!-- noqa: account-id - run provenance, account rotates -->
+from scratch; the bring-up was executed by a fenced agent allowed to read
+only `docs/site/how-to/build-the-platform-from-nothing.md`):
 
 | Phase | State | Run ID / SHA |
 |---|---|---|
-| state backend | bootstrapped | base run 34396955442 |
-| base | applied, success 19:45:34Z–19:48:57Z | 34396955442 (branch `18a4205`) |
-| management | applied, success 19:49:39Z–20:10:57Z; re-applied 22:06Z–22:07Z for the widened verifier/reaper policy | 34397369089 (branch `18a4205`); 34410469157 (branch `4364d4a`) |
-| hub cluster | EKS `k8-platform-mgmt` live | management runs above |
-| spoke cluster | EKS `k8-platform-services` ACTIVE, node group `k8-platform-services-default` ACTIVE, 2 Ready nodes via the relay | oracle RUN_ID `build6-2220` |
-| gate 1 (platform-cluster-claim) | synced by `kubectl patch` at the explicit SHA; XPlatformCluster `platform/platform` Ready, nodegroup `platform-78032583fa77` Ready, 15 min | `.status.sync.revision` = `bc1cbb6fe27b976dee0b4e86953114481ca15d51` |
-| gate 2 (spoke-access) | synced at the same explicit SHA; registration Secret `platform-spoke` complete (full ADR-0010 contract) in the first 30 s; XSpokeAccess Ready=True 4m10s, XPlatformCluster Ready=True 20m, 20:37:02Z | revision confirmed = `bc1cbb6` |
-| Argo CD apps | every Application Synced/Healthy except `workload1-cluster` (OutOfSync by design); all report synced revision `96279fd` after the post-merge auto-sync, incl. the new `spoke-storage` Application | `96279fd1d5a6fb5d852671e0211aa8c3e7fc9404` |
-| spoke storage | `aws-ebs-csi-driver` addon ACTIVE `v1.65.0-eksbuild.2` under IRSA role `k8-platform-k8-platform-services-ebs-csi`; `ebs.csi.aws.com` registered; StorageClass `gp3 (default)`; 3/3 monitoring PVCs Bound; `spoke-observability-kube-prometheus-stack` and `spoke-observability-loki` Healthy | composition delivered at `96279fd` |
-| oracles | pass=25 skip=3 fail=0 checks=28, 22:20Z–22:28Z; suite still exits 3 on the expect-full gap (`kp-lc5`); 3 structural skips (`kp-ug3`) | RUN_ID `build6-2220`, `LIVE_CLUSTER=k8-platform-services`, `LIVE_PROFILE=full`, mutating |
-| live-verify | success (`profile=full`), evidence record emitted | 34412419016 (`main` @ `96279fd`) |
-| live-evidence gate | success; the fail-closed gate reads the evidence as satisfying | 34414013044 (`main` @ `96279fd`) |
+| teardown before it | management destroy 13 min, then base destroy; account verified empty (no EKS clusters, 0 load balancers, 0 RDS instances, no `k8-platform-*` IAM roles besides the hub's) | 34419405234, 34420560366; mid-teardown IAM fix `6e84258` applied by 34418948661 in 48 s |
+| platform SHA | `main` `3298e70f614d793f040ea4d6b97c4455cfe028b9` — probe, base, management and BOTH gate syncs | `git log` |
+| harness SHA | branch, NOT `3298e70`: live-verify ran ref `bf520ba353d4544339175076ea66dacbf49d2bcc`; the two oracle runs ran the same branch harness at or before that commit (the guard-check defect `bf520ba` fixes was still failing on them) | `git log` |
+| probe (`test`/`test-e2e`) | green in 19 s (creds 3/3, zone 4/4, state-backend 2/2) — green where the page documents red, because the teardown left the state backend behind | 34421037502 (`main` @ `3298e70`) |
+| state backend | survived the teardown; not re-bootstrapped | probe 34421037502 |
+| base | applied, success, 2m55s | 34421097160 (`main` @ `3298e70`) |
+| management | applied, success, 17m24s (single apply, no re-apply) | 34421376617 (`main` @ `3298e70`) |
+| hub cluster | EKS `k8-platform-mgmt` live | management run above |
+| spoke cluster | EKS `k8-platform-services` live, node group Ready | gate 1 below; relay oracle PASS |
+| gate 1 (platform-cluster-claim) | synced at `3298e70`; XPlatformCluster `platform/platform` published its four facts and the node group reached Ready, ~24 min from sync | `3298e70f614d793f040ea4d6b97c4455cfe028b9` |
+| gate 2 (spoke-access) | synced 01:20:40Z at the same SHA; registration Secret `platform-spoke` present at 11 s with all six `k8-platform.io/*` annotations as documented; XSpokeAccess Ready ~6m10s | `3298e70f614d793f040ea4d6b97c4455cfe028b9` |
+| IdP ordering | `identityproviderconfig/platform-5183a6d2c254` (owner `XPlatformCluster/platform`) `Ready=True reason=Available` 01:13:50Z, composite 01:14:17Z — both before gate 2 synced at 01:20:40Z | operator measurement |
+| Argo CD apps | 17 Applications, all Synced/Healthy except `workload1-cluster` (OutOfSync by design) | operator measurement |
+| endpoints | hello HTTP 200 in 0.50 s, body `hello from the k8-platform platform-services cluster`; Argo CD HTTP 200; Keycloak OIDC discovery HTTP 200 with the expected issuer | operator measurement (TLS validated against the intercepting egress gateway, not the ACM chain) |
+| composites | 5 Synced=True Ready=True: `xplatformcluster`, `xspokeaccess`, `xdatabase/keycloak-db`, 2× `xplatformsecret` | operator measurement |
+| spoke storage ordering | StorageClass `gp3 (default)`/`ebs.csi.aws.com` age 6m57s vs monitoring PVCs 6m50s/6m22s/6m17s — class before every PVC, all 3 Bound on gp3, no retroactive assignment (`kp-2al.19`) | operator measurement |
+| oracles | `build7-0135`: pass=27 skip=0 fail=2 (federation kubectl leg; AppProject destination guard). `build7-0152`: pass=28 skip=0 fail=1 (destination guard only; federation PASSED, `username=kc:oracle-build7-0152@federation-oracle.invalid groups∋kc:k8s-viewers`). Zero skips is new (`kp-ug3`). Destination-guard failure = CHECK defect, fixed in `bf520ba` (`kp-2al.27`); federation failure = association warm-up window (rejected ~01:43Z, accepted ~01:54Z) | `LIVE_CLUSTER=k8-platform-services`, `LIVE_PROFILE=full`, mutating, harness `bf520ba` |
+| live-verify | conclusion success (`profile=full`), evidence artifact 10133798389 uploaded 02:22:21Z | 34428165725 (ref `bf520ba`) |
+| not verified on this build | Argo CD browser sign-in (no Chromium egress; credential checked via the `argocd` CLI), direct ACM-chain validation from the sandbox, the `kp-lc5` expect-full figure (not recorded either way), the fail-closed live-evidence gate (no gate run recorded for this build — only the producer, 34428165725), and a HUMAN executing the page on a FRESH account (`kp-2al.10` open; the page keeps `status: contract`) | — |
