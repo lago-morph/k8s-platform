@@ -38,6 +38,7 @@ jobs:
         module:
           - base
           - management
+          - opsbox
     defaults:
       run:
         working-directory: terraform/${{ matrix.module }}
