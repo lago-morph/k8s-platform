@@ -89,4 +89,5 @@ is done" is verifiable against an expected state rather than a vacuous
 - `docs/site/how-to/build-the-platform-from-nothing.md` — the page this ADR justifies.
 - `docs/site/reference/finished-platform.md` — the companion inventory.
 - `docs/open-issues.md` → OI-2026-07-06-4 — the "no human-executable bring-up verified" gap and its close condition.
+- [`0018-documentation-is-verified-by-fenced-execution.md`](0018-documentation-is-verified-by-fenced-execution.md) — gives the `contract` obligation recorded here a discharge path short of the human run (fenced execution), without changing the rule that `stable` flips only on a human-executed build.
 - PR #256.
