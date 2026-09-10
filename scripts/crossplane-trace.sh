@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# crossplane-trace.sh — walk a claim → XR → managed-resource → atProvider chain
-# and print .status.conditions at every layer. Read-only.
+# crossplane-trace.sh — walk an XR → managed-resource → atProvider chain and
+# print .status.conditions at every layer. Read-only.
+#
+# Crossplane v2 has no claim layer: the object you name IS the composite, and
+# its machinery (compositionRef, resourceRefs) lives under .spec.crossplane.
+# The v1 shape (a claim whose .spec.resourceRef points at a composite, with
+# machinery directly under .spec) is still followed when it is present.
 #
 # Usage:
 #   scripts/crossplane-trace.sh <kind>/<name> [-n <ns>] [--watch] [--json] [--timeout <s>]
@@ -196,7 +201,8 @@ XR_KIND=""
 XR_NAME=""
 XR_JSON=""
 XR_LOOKUP_FAILED=0
-MR_REFS_JSON="[]"   # raw resourceRefs from XR
+ROOT_IS_XR=0        # 1 = the object named on the command line IS the composite (v2)
+MR_REFS_JSON="[]"   # raw resourceRefs from the composite
 MR_DETAILS_JSON="[]" # per-MR enriched detail: [{kind,name,synced,ready,reason,message,atProvider,fail}]
 PROVIDER_NAME=""
 PROVIDER_JSON=""
@@ -230,7 +236,7 @@ provider_for_apiversion() {
 
 collect() {
   CLAIM_JSON=""; CLAIM_LOOKUP_FAILED=0; CLAIM_COMP_REF=""
-  XR_KIND=""; XR_NAME=""; XR_JSON=""; XR_LOOKUP_FAILED=0
+  XR_KIND=""; XR_NAME=""; XR_JSON=""; XR_LOOKUP_FAILED=0; ROOT_IS_XR=0
   MR_REFS_JSON="[]"; MR_DETAILS_JSON="[]"
   PROVIDER_NAME=""; PROVIDER_JSON=""; POD_JSON=""; POD_SA=""
   SA_JSON=""; ROLE_ARN=""; TRUST_SUB_SA=""; IRSA_MATCH=""
@@ -241,34 +247,56 @@ collect() {
     CLAIM_LOOKUP_FAILED=1
     return
   fi
-  CLAIM_COMP_REF=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.spec.compositionRef.name // ""')
+  # Crossplane v2 keeps composite machinery under .spec.crossplane; v1 kept it
+  # directly under .spec. Read both, v2 first (kp-2al.28).
+  CLAIM_COMP_REF=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.spec.crossplane.compositionRef.name // .spec.compositionRef.name // ""')
   XR_KIND=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.spec.resourceRef.kind // ""')
   XR_NAME=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.spec.resourceRef.name // ""')
 
-  # ---- Layer 1: XR ---------------------------------------------------------
+  # ---- Layer 1: the composite ---------------------------------------------
+  # v1 put a claim in front of the composite and pointed at it with
+  # .spec.resourceRef. v2 has no claim layer at all: the object the operator
+  # named IS the composite. With no pointer to follow, trace the object
+  # itself — chasing the absent v1 pointer is what made this tool print a
+  # clean-looking trace listing none of a composite's managed resources.
   if [[ -n "$XR_NAME" && -n "$XR_KIND" ]]; then
     XR_JSON=$(kget_json "$XR_KIND" "$XR_NAME" "")
     if [[ -z "$XR_JSON" ]]; then
       XR_LOOKUP_FAILED=1
     else
-      MR_REFS_JSON=$(printf '%s' "$XR_JSON" | jq -c '.spec.resourceRefs // []' 2>/dev/null || echo "[]")
+      MR_REFS_JSON=$(printf '%s' "$XR_JSON" | jq -c '.spec.crossplane.resourceRefs // .spec.resourceRefs // []' 2>/dev/null || echo "[]")
     fi
+  else
+    ROOT_IS_XR=1
+    XR_KIND=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.kind // ""')
+    [[ -n "$XR_KIND" ]] || XR_KIND="$KIND"
+    XR_NAME=$(printf '%s' "$CLAIM_JSON" | jq_or_empty '.metadata.name // ""')
+    [[ -n "$XR_NAME" ]] || XR_NAME="$NAME"
+    XR_JSON="$CLAIM_JSON"
+    MR_REFS_JSON=$(printf '%s' "$XR_JSON" | jq -c '.spec.crossplane.resourceRefs // .spec.resourceRefs // []' 2>/dev/null || echo "[]")
   fi
 
   # ---- Layer 2: managed resources -----------------------------------------
+  # v2 composed resources are namespaced and live in the composite's own
+  # namespace; a ref may or may not spell it out. v1 MRs were cluster-scoped,
+  # where an empty namespace is correct.
+  local xr_ns
+  xr_ns=$(printf '%s' "$XR_JSON" | jq_or_empty '.metadata.namespace // ""')
   local refs_count
   refs_count=$(printf '%s' "$MR_REFS_JSON" | jq 'length' 2>/dev/null || echo 0)
   local i=0
   local details="[]"
   local first_fail_apiversion=""
   while [[ "$i" -lt "$refs_count" && "$i" -lt 12 ]]; do
-    local ref_av ref_kind ref_name
+    local ref_av ref_kind ref_name ref_ns
     ref_av=$(printf '%s' "$MR_REFS_JSON" | jq -r ".[$i].apiVersion // \"\"" 2>/dev/null)
     ref_kind=$(printf '%s' "$MR_REFS_JSON" | jq -r ".[$i].kind // \"\"" 2>/dev/null)
     ref_name=$(printf '%s' "$MR_REFS_JSON" | jq -r ".[$i].name // \"\"" 2>/dev/null)
+    ref_ns=$(printf '%s' "$MR_REFS_JSON" | jq -r ".[$i].namespace // \"\"" 2>/dev/null)
+    [[ -n "$ref_ns" ]] || ref_ns="$xr_ns"
     if [[ -z "$ref_kind" || -z "$ref_name" ]]; then i=$((i+1)); continue; fi
     local mr_json mr_synced mr_ready mr_reason mr_msg mr_atp fail
-    mr_json=$(kget_json "$ref_kind" "$ref_name" "")
+    mr_json=$(kget_json "$ref_kind" "$ref_name" "$ref_ns")
     if [[ -z "$mr_json" ]]; then
       mr_synced="?" ; mr_ready="?"; mr_reason="lookup-failed"; mr_msg=""; mr_atp="{}"
       fail=1
@@ -359,13 +387,17 @@ render_human() {
   ts=$(date -u +"%H:%M:%SZ")
   printf '=== CROSSPLANE TRACE: %s/%s -n %s  [%s] ===\n' "$KIND" "$NAME" "$NS" "$ts"
 
-  # ---- CLAIM ----
+  # ---- ROOT (the object named on the command line) ----
+  # Crossplane v2 has no claim layer, and AGENTS bans the v1 vocabulary: the
+  # root is the composite itself unless a v1 claim pointed somewhere else.
+  local root_label="ROOT"
+  if [[ "$ROOT_IS_XR" -eq 1 ]]; then root_label="XR   "; fi
   if [[ "$CLAIM_LOOKUP_FAILED" -eq 1 ]]; then
-    printf 'CLAIM: lookup-failed (%s/%s -n %s not found)\n' "$KIND" "$NAME" "$NS"
+    printf 'ROOT: lookup-failed (%s/%s -n %s not found)\n' "$KIND" "$NAME" "$NS"
     printf '=== END TRACE ===\n'
     return
   fi
-  printf 'CLAIM    %s/%s  compRef=%s\n' "$KIND" "$NAME" "${CLAIM_COMP_REF:--}"
+  printf '%s    %s/%s  compRef=%s\n' "$root_label" "$KIND" "$NAME" "${CLAIM_COMP_REF:--}"
   local c_synced c_ready c_reason_s c_reason_r c_msg
   c_synced=$(printf '%s' "$CLAIM_JSON" | jq -r '(.status.conditions // []) | map(select(.type=="Synced"))[0].status // "?"')
   c_ready=$(printf '%s' "$CLAIM_JSON" | jq -r '(.status.conditions // []) | map(select(.type=="Ready"))[0].status // "?"')
@@ -374,22 +406,30 @@ render_human() {
   c_msg=$(printf '%s' "$CLAIM_JSON" | jq -r '(.status.conditions // []) | map(select(.type=="Ready"))[0].message // ""' | trunc 160)
   printf '  Synced=%s reason=%s | Ready=%s reason=%s  message: %s\n' \
     "$c_synced" "$c_reason_s" "$c_ready" "$c_reason_r" "$c_msg"
-  if [[ -n "$XR_KIND" && -n "$XR_NAME" ]]; then
+  if [[ "$ROOT_IS_XR" -eq 0 && -n "$XR_KIND" && -n "$XR_NAME" ]]; then
     printf '  XR-ptr: %s/%s\n' "$XR_KIND" "$XR_NAME"
   fi
 
   # ---- XR ----
+  # When the root IS the composite there is nothing to descend into, so the
+  # header and the conditions are not repeated — only the composed resources.
   if [[ -n "$XR_NAME" ]]; then
-    printf 'XR       %s/%s\n' "$XR_KIND" "$XR_NAME"
+    if [[ "$ROOT_IS_XR" -eq 0 ]]; then
+      printf 'XR       %s/%s\n' "$XR_KIND" "$XR_NAME"
+    fi
     if [[ "$XR_LOOKUP_FAILED" -eq 1 ]]; then
       printf '  XR: lookup-failed\n'
     else
-      local xr_summary
-      xr_summary=$(printf '%s' "$XR_JSON" | conditions_summary)
-      if [[ -z "$xr_summary" ]]; then
+      if [[ "$ROOT_IS_XR" -eq 0 ]]; then
+        local xr_summary
+        xr_summary=$(printf '%s' "$XR_JSON" | conditions_summary)
+        if [[ -z "$xr_summary" ]]; then
+          printf '  conditions: <empty — Composition pipeline may not have reconciled yet>\n'
+        else
+          printf '  conditions: %s\n' "$xr_summary"
+        fi
+      elif [[ "$(printf '%s' "$XR_JSON" | jq '(.status.conditions // []) | length' 2>/dev/null || echo 0)" -eq 0 ]]; then
         printf '  conditions: <empty — Composition pipeline may not have reconciled yet>\n'
-      else
-        printf '  conditions: %s\n' "$xr_summary"
       fi
       local total_refs shown_refs
       total_refs=$(printf '%s' "$MR_REFS_JSON" | jq 'length' 2>/dev/null || echo 0)
@@ -543,7 +583,7 @@ render_json() {
 # ---------------------------------------------------------------------------
 # Watch loop (spec §5.5)
 # ---------------------------------------------------------------------------
-claim_is_ready() {
+root_is_ready() {
   local st
   st=$(k8s_get_condition "$KIND" "$NAME" "$NS" Ready)
   [[ "$st" == "True" ]]
@@ -562,12 +602,12 @@ run_watch() {
   local elapsed=0
   while :; do
     run_once
-    if [[ "$CLAIM_LOOKUP_FAILED" -eq 0 ]] && claim_is_ready; then
-      echo "=== CLAIM READY — watch exiting 0 ==="
+    if [[ "$CLAIM_LOOKUP_FAILED" -eq 0 ]] && root_is_ready; then
+      echo "=== READY — watch exiting 0 ==="
       exit 0
     fi
     if [[ "$elapsed" -ge "$TIMEOUT" ]]; then
-      echo "=== TIMEOUT (${TIMEOUT}s) — claim not Ready ==="
+      echo "=== TIMEOUT (${TIMEOUT}s) — not Ready ==="
       exit 2
     fi
     sleep "$TRACE_INTERVAL"
