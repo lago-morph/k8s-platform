@@ -28,7 +28,8 @@ outputs, the cluster-facts mechanism) — never through commits or hand-edits.
    as empty and `ai/handoff.md` as belief until the live API confirms.
 2. `ai/handoff.md` — last verified state. `ai/roadmap.md` — the plan, the
    steps, and the definition of "feature complete". `bd ready` — the task
-   graph (beads; hooks install and sync it; habits in the `beads` skill).
+   graph (beads; hooks install and sync it; habits and the recovery drill for
+   "no beads database found" in the `beads` skill).
 3. `SUBSTRATE-READINESS.md` — the definition of done and what's still owed.
 4. `ai/environment.md` — sandbox capability profile (read before declaring
    anything unreachable/unavailable).

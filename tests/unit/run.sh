@@ -184,6 +184,11 @@ run_suite tests/unit/test_no_placeholder_runtime_values.sh
 run_suite tests/unit/test_aws_text_bool_compare.sh
 run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
 
+# kp-du3: the beads bootstrap must work from the SHALLOW clone a web sandbox
+# gets; when it does not, the session starts with no task graph and the
+# prepush guard blocks every push.
+run_suite tests/unit/test_beads_sync_shallow_bootstrap.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated

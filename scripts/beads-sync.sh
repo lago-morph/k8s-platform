@@ -84,6 +84,25 @@ cmd_install() {
     bd version || die "bd not runnable after install"
 }
 
+# Build the throwaway bare mirror that bd/dolt clones from. It needs the data
+# on refs/dolt/data and *some* branch, or Dolt reads the repository as empty.
+#
+# The branch is set with update-ref, never by pushing HEAD: a Claude Code web
+# sandbox clones this repository shallow, and git refuses to push shallow
+# history ("shallow update not allowed"). That failure used to abort bootstrap
+# and leave the whole session with no beads database, which the prepush guard
+# then turns into "every git push is blocked" (kp-du3).
+seed_mirror() {
+    mirror="$1"
+    git init -q --bare "$mirror" || die "cannot create mirror $mirror"
+    git push -q "$mirror" refs/beads-sync/data:refs/dolt/data >/dev/null 2>&1 ||
+        die "cannot seed mirror with Dolt data"
+    git --git-dir="$mirror" update-ref refs/heads/main refs/dolt/data ||
+        die "cannot seed mirror with a branch"
+    git --git-dir="$mirror" symbolic-ref HEAD refs/heads/main ||
+        die "cannot point mirror HEAD at its branch"
+}
+
 # Clone the Dolt database out of the branch ref via a throwaway local bare repo
 # whose copy of the data sits on refs/dolt/data, which is what bd/dolt expect.
 bootstrap_from_ref() {
@@ -94,11 +113,7 @@ bootstrap_from_ref() {
     rm -rf "$mirror"
     git fetch -q origin "+$BEADS_DATA_REF:refs/beads-sync/data" ||
         die "cannot fetch $BEADS_DATA_REF from origin"
-    git init -q --bare "$mirror" || die "cannot create mirror $mirror"
-    git push -q "$mirror" refs/beads-sync/data:refs/dolt/data >/dev/null 2>&1 ||
-        die "cannot seed mirror with Dolt data"
-    git push -q "$mirror" HEAD:refs/heads/main >/dev/null 2>&1 ||
-        die "cannot seed mirror with a branch"
+    seed_mirror "$mirror"
 
     cp "$root/.beads/config.yaml" "$root/.beads/config.yaml.beads-sync-bak" ||
         die "cannot back up config.yaml"
@@ -183,13 +198,17 @@ cmd_status() {
     printf 'beads: ready=%s in_progress=%s unpushed=%s\n' "${ready:-?}" "${prog:-?}" "$un"
 }
 
-case "${1:-}" in
-    install) cmd_install ;;
-    bootstrap) cmd_bootstrap ;;
-    push) cmd_push ;;
-    status) cmd_status ;;
-    *)
-        printf 'usage: %s {install|bootstrap|push|status}\n' "$0" >&2
-        exit 2
-        ;;
-esac
+# Sourcing this file (tests do, to exercise a single function) must not
+# dispatch or exit.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    case "${1:-}" in
+        install) cmd_install ;;
+        bootstrap) cmd_bootstrap ;;
+        push) cmd_push ;;
+        status) cmd_status ;;
+        *)
+            printf 'usage: %s {install|bootstrap|push|status}\n' "$0" >&2
+            exit 2
+            ;;
+    esac
+fi
