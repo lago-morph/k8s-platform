@@ -26,6 +26,7 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 | Latest evidence on the branch | live-verify success at PR #267's head `5ac400c`, and the fail-closed live-evidence gate green at the same SHA | 34430738213, 34432226978 |
 | PR #267 | open, mergeable, unit tests green — carries build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | `gh` PR view |
 | PR #270 | open — step 3 Phase A: `kp-du3`, `kp-2al.28` (static half), `kp-2al.24`, `kp-2al.22`, the teardown runbook (`kp-2al.30`) and the database scenario-ready check (`kp-2al.16`). Touches no live-evidence-gated path | PR #270 |
+| Account at the end of this session | `439891535995` was built (#8) and torn back down to nothing, state backend included — verified empty by the operator. The owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so this one is spent, not reserved | teardown block below | <!-- noqa: account-id - run provenance, account rotates -->
 | Account after this session | expected to ROTATE. Assume nothing until `scripts/whereami.sh` says otherwise; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) | — |
 
 ## Environment state
@@ -57,6 +58,21 @@ management and BOTH gate syncs):
 | kp-2al.28 live confirmation | on `XPlatformCluster platform/platform`: `.spec.resourceRefs` EMPTY, `.spec.crossplane.resourceRefs` = 16, and the fixed `scripts/crossplane-trace.sh` printed `resourceRefs (16 total)` with per-resource conditions and `compRef=platform-cluster-aws` | operator measurement 17:48:32Z |
 | kp-2al.8 before-state | `keycloak-db` uid `1b25b14f-56f9-4bb8-a473-b66a3c525f99` and `keycloak-db-master` uid `e6236c2f-4f55-44c3-98a0-54c9f7af14be`, BOTH ownerReferenced to `Instance/keycloak-db-41f61ab935ae` uid `35017b49-870a-4414-8830-06d1861c0491` | operator measurement 18:06Z |
 | not verified on this build | **Keycloak OIDC discovery — not attempted against the right host.** The operator probed `keycloak.platform.<domain>`, which the platform never publishes; the SSO host is `auth.platform.<domain>` (the bring-up page's verification check 4 names it, and its A record was present in the zone by 18:19Z alongside `hello.platform`, `grafana.platform` and `argocd.management`). By the time the wrong hostname was identified the teardown had begun, so the check was not run. This is an operator error, not a platform or documentation gap. The federation oracles and live-verify were likewise not dispatched (rows 10/11 are already DONE 2×, and this account's remaining budget went to the teardown validation). Also unverified: Argo CD browser sign-in, direct ACM-chain validation from the sandbox | — |
+
+Build #8 TEARDOWN, executed 2026-09-10 18:11Z-19:12Z as a FENCED
+validation of `docs/site/how-to/tear-the-platform-down.md` (ADR-0018):
+the agent was given that page and nothing else from this repository.
+
+| Item | Result |
+|---|---|
+| account end state (verified by the operator, not only by the agent) | 0 EKS, 0 load balancers, 0 RDS, 0 running EC2, 0 EBS volumes, 0 non-default VPCs, 0 NAT gateways, no `k8-platform-*` IAM roles, state bucket and lock table both absent |
+| destroy runs | management 34516300481 (13m43s), base 34517977976 (1m36s) |
+| findings | 15; 14 folded into the page (commit 9829c1a), 1 rejected on triage |
+| the two serious ones | stage order was wrong — Argo must be stopped BEFORE the LoadBalancer Services or a THIRD NLB is created; and ApplicationSets were unmentioned, though nine of seventeen Applications regenerate about a second after deletion |
+| the expensive one | three `available` gp3 volumes totalling 22 GiB survived a teardown that passed every check the page had. The operator deleted them; the page now removes the claims and checks `describe-volumes` |
+| rejected on triage | the surviving Route53 hosted zone is PRE-EXISTING (the account ships with it and the build discovers it); deleting it would break the next bring-up. The page says so rather than removing it |
+| `kp-2al.8` settled | both `keycloak-db` Secrets were garbage-collected when their owning RDS Instance MR went; the OI-2026-06-06-3 defect does not exist on this stack. UIDs in the bead |
+| fence integrity | the agent reported it read only the page, but that a catalogue of repository skill descriptions was auto-injected into its context. Weaker isolation than build #7's; every correction traces to live output it observed, not to that catalogue |
 
 Build #7 state as verified 2026-09-10 (same account as build #6,
 `801822495028`, us-east-1 — emptied to nothing after build #6 and rebuilt <!-- noqa: account-id - run provenance, account rotates -->
