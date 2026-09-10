@@ -189,6 +189,11 @@ run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
 # prepush guard blocks every push.
 run_suite tests/unit/test_beads_sync_shallow_bootstrap.sh
 
+# kp-2al.24: operator guidance must confirm a gate sync by the completed
+# OPERATION, never by .status.sync.revision (which Argo sets from the observed
+# target revision, so it reads correct for a gate that never synced).
+run_suite tests/unit/test_gate_sync_confirmation.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated
