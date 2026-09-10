@@ -27,6 +27,7 @@ on:
         options:
           - plan
           - apply
+          - verify
           - destroy
 
 concurrency:
@@ -124,7 +125,7 @@ jobs:
       # The box checks out whatever ref this workflow was dispatched from, so
       # exercising the scripts on a branch needs no extra input.
       - name: terraform plan
-        if: inputs.action != 'destroy'
+        if: inputs.action == 'plan' || inputs.action == 'apply'
         working-directory: terraform/opsbox
         env:
           TF_VAR_repo_ref: ${{ github.ref_name }}
@@ -143,6 +144,46 @@ jobs:
         env:
           TF_VAR_repo_ref: ${{ github.ref_name }}
         run: terraform destroy -auto-approve -no-color
+
+      # Self-test. Runs k8p-status.sh ON THE BOX via SSM and prints its output
+      # here, which proves in one shot that user_data cloned the repo and
+      # installed the toolchain, that the SSM agent registered (so the console
+      # browser shell will work), and that the script's AWS read paths behave.
+      #
+      # k8p-status.sh exits non-zero until every stage is green, which is the
+      # CORRECT answer on an empty account — so this step reports the output
+      # and does not fail the run on it. Read the lines, not the colour.
+      - name: verify the box
+        if: inputs.action == 'apply' || inputs.action == 'verify'
+        working-directory: terraform/opsbox
+        run: |
+          set -euo pipefail
+          ID="$(terraform output -raw instance_id)"
+          echo "instance: $ID"
+
+          echo "waiting for the SSM agent to register (user_data installs the toolchain first)"
+          for i in $(seq 1 40); do
+            ONLINE="$(aws ssm describe-instance-information               --filters "Key=InstanceIds,Values=$ID"               --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
+            [ "$ONLINE" = "Online" ] && break
+            sleep 15
+          done
+          [ "$ONLINE" = "Online" ] || { echo "SSM agent never came Online — the browser shell will not work"; exit 1; }
+          echo "SSM agent Online"
+
+          CMD="$(aws ssm send-command --instance-ids "$ID"             --document-name AWS-RunShellScript             --comment "opsbox self-test"             --parameters 'commands=["test -f /var/lib/opsbox-ready || { echo BOOTSTRAP-INCOMPLETE; tail -40 /var/log/opsbox-bootstrap.log; exit 1; }","cd /opt/k8-platform && git rev-parse --short HEAD","for t in aws kubectl jq yq helm; do echo $t $(command -v $t || echo MISSING); done","NO_COLOR=1 /opt/k8-platform/scripts/opsbox/k8p-status.sh || true"]' \
+            --query 'Command.CommandId' --output text)"
+
+          aws ssm wait command-executed --command-id "$CMD" --instance-id "$ID" 2>/dev/null || true
+
+          echo "─────────────── output from the ops box ───────────────"
+          aws ssm get-command-invocation --command-id "$CMD" --instance-id "$ID"             --query 'StandardOutputContent' --output text
+          echo "─────────────── stderr ────────────────────────────────"
+          aws ssm get-command-invocation --command-id "$CMD" --instance-id "$ID"             --query 'StandardErrorContent' --output text
+          echo "───────────────────────────────────────────────────────"
+
+          STATUS="$(aws ssm get-command-invocation --command-id "$CMD" --instance-id "$ID"             --query 'Status' --output text)"
+          echo "SSM command status: $STATUS"
+          [ "$STATUS" = "Success" ] || { echo "the box did not complete the self-test"; exit 1; }
 
       - name: How to reach it
         if: inputs.action == 'apply'
