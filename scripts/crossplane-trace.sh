@@ -342,13 +342,49 @@ collect() {
     if [[ -z "$PROVIDER_JSON" ]]; then
       PROVIDER_JSON=$(kget_json "provider" "$PROVIDER_NAME" "")
     fi
-    # provider pod
-    POD_JSON=$("$KUBECTL" get pods -n crossplane-system \
-      -l "pkg.crossplane.io/provider=${PROVIDER_NAME#upbound-}" -o json 2>/dev/null || true)
-    if [[ -z "$POD_JSON" || "$POD_JSON" == "null" ]]; then
-      POD_JSON=$("$KUBECTL" get pods -n crossplane-system -o json 2>/dev/null || true)
+    # ---- provider pod (kp-2al.32) ----------------------------------------
+    # The old read was a single label selector,
+    # pkg.crossplane.io/provider=<name with the "upbound-" prefix stripped>.
+    # The family-provider Deployment does not carry that label — terraform
+    # recorded exactly this in 2026-06-05 (OI-2026-06-05-4, the by-label
+    # delete it had to drop) — so the selector matched nothing and the trace
+    # printed "pod: ?" beside a Provider it had just read as Healthy.
+    #
+    # Try both spellings of the label, then fall back to matching the pod by
+    # NAME prefix. The old fallback listed every pod in the namespace and took
+    # items[0], which is worse than reporting nothing: it can hand back the
+    # crossplane CORE pod's ServiceAccount and turn the IRSA check into a
+    # confident MISMATCH about the wrong workload.
+    local pod_sel
+    for pod_sel in "$PROVIDER_NAME" "${PROVIDER_NAME#upbound-}"; do
+      POD_JSON=$("$KUBECTL" get pods -n crossplane-system \
+        -l "pkg.crossplane.io/provider=${pod_sel}" -o json 2>/dev/null || true)
+      [[ "$(printf '%s' "$POD_JSON" | jq '.items | length' 2>/dev/null || echo 0)" -gt 0 ]] && break
+      POD_JSON=""
+    done
+    if [[ -z "$POD_JSON" ]]; then
+      POD_JSON=$("$KUBECTL" get pods -n crossplane-system -o json 2>/dev/null \
+        | jq -c --arg a "$PROVIDER_NAME" --arg b "${PROVIDER_NAME#upbound-}" \
+            '{items: [.items[] | select((.metadata.name|startswith($a)) or (.metadata.name|startswith($b)))]}' \
+            2>/dev/null || true)
+      [[ "$(printf '%s' "$POD_JSON" | jq '.items | length' 2>/dev/null || echo 0)" -gt 0 ]] || POD_JSON=""
     fi
     POD_SA=$(printf '%s' "$POD_JSON" | jq -r '.items[0].spec.serviceAccountName // ""' 2>/dev/null)
+
+    # The ServiceAccount is what IRSA actually hangs off, and this platform
+    # PINS its name in the provider's DeploymentRuntimeConfig precisely so the
+    # IRSA trust subject matches (terraform/management/helm.tf). So when no pod
+    # is found, resolve the SA through that reference rather than giving up —
+    # the IRSA check is the whole reason this script exists.
+    if [[ -z "$POD_SA" && -n "$PROVIDER_JSON" ]]; then
+      local drc_name drc_json
+      drc_name=$(printf '%s' "$PROVIDER_JSON" | jq -r '.spec.runtimeConfigRef.name // ""' 2>/dev/null)
+      if [[ -n "$drc_name" ]]; then
+        drc_json=$("$KUBECTL" get deploymentruntimeconfig "$drc_name" -o json 2>/dev/null || true)
+        POD_SA=$(printf '%s' "$drc_json" | jq -r '.spec.serviceAccountTemplate.metadata.name // ""' 2>/dev/null)
+      fi
+    fi
+
     # SA lookup (for IRSA role annotation)
     if [[ -n "$POD_SA" ]]; then
       SA_JSON=$("$KUBECTL" get sa "$POD_SA" -n crossplane-system -o json 2>/dev/null || true)

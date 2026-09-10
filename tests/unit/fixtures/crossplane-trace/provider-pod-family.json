@@ -1,0 +1,26 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "metadata": {
+        "name": "upbound-provider-family-aws-7d9f6c4b2-x8k2p",
+        "namespace": "crossplane-system",
+        "labels": {
+          "pkg.crossplane.io/provider": "upbound-provider-family-aws"
+        }
+      },
+      "spec": {
+        "serviceAccountName": "upbound-provider-family-aws"
+      },
+      "status": {
+        "phase": "Running",
+        "containerStatuses": [
+          {
+            "restartCount": 0
+          }
+        ]
+      }
+    }
+  ]
+}
