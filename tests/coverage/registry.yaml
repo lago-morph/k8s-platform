@@ -30,6 +30,18 @@
 #                                       after-the-fact on the hub, instantiate only in isolation
 #                 - slow:               EKS ~20 min / RDS multi-min — AFTER-THE-FACT only
 #   defended_by: a test ID / path, or `pending:P<n>` until that phase's test lands
+#   coverage:    (optional) `transitive` — this kind has NO standalone check and
+#                emits NO `COVERS` line of its own: the check named in
+#                `defended_by` proves it through assertions that cannot hold
+#                unless this kind is real. Such a kind is excluded from the live
+#                suite's EXPECT-FULL set (`derive-coverage.sh --expect-full`),
+#                because runtime coverage is counted from COVERS lines and a kind
+#                with no check of its own would otherwise read "declared but
+#                unverified" on every run (kp-2al.20, build6-2220). It is not a
+#                hole: the defending check's OWN kind stays in EXPECT-FULL, so
+#                the violation fires there if that check stops passing. Invariant
+#                (tests/unit/test_coverage_deriver.sh): a `transitive` kind's
+#                defended_by MUST also defend a non-transitive kind.
 #
 # Cost assignments are policy knobs (FINAL-PLAN §5/§14.5); tune in the handoff.
 
@@ -45,6 +57,7 @@ kinds:
   ec2.aws.m.upbound.io/SecurityGroup:
     lane: aws
     cost: singleton-coupled   # the dedicated <xr>-rds group (OI-2026-06-11-1); created with the XDatabase
+    coverage: transitive      # no standalone check; proven by the RDS instance's placement assertion
     defended_by: tests/live/checks/after/rds-instance-live.sh   # behavioral: instance available IN a non-default VPC (placement = the SubnetGroup+SG in effect)
   ec2.aws.m.upbound.io/SecurityGroupRule:
     lane: aws
@@ -107,6 +120,7 @@ kinds:
   rds.aws.m.upbound.io/SubnetGroup:
     lane: aws
     cost: singleton-coupled   # base-VPC private-subnet group (OI-2026-06-11-1); created with the XDatabase
+    coverage: transitive      # no standalone check; the instance's DBSubnetGroup.VpcId read IS this group
     defended_by: tests/live/checks/after/rds-instance-live.sh   # behavioral: instance available IN a non-default VPC
   route53.aws.m.upbound.io/Record:
     lane: aws
@@ -119,10 +133,12 @@ kinds:
   secretsmanager.aws.m.upbound.io/SecretVersion:
     lane: aws
     cost: singleton-coupled   # platform-secret material chain (writes the generated value into the MR-owned ASM container)
+    coverage: transitive      # no standalone check; an AWSCURRENT stage exists only because this MR wrote it
     defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: the written value IS the AWSCURRENT version the check requires
   generators.external-secrets.io/Password:
     lane: non-aws
     cost: singleton-coupled   # platform-secret material source (ADR-0005 generatorRef)
+    coverage: transitive      # no standalone check; the material chain has no other source of the staged value
     defended_by: tests/live/checks/after/secretsmanager-secret-live.sh   # behavioral: generated material lands as the AWSCURRENT version
   external-secrets.io/ExternalSecret:
     lane: non-aws         # no IAM action to simulate (FINAL-PLAN §4.5)

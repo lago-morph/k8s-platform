@@ -22,6 +22,29 @@ contract (a live `skip()` is exit 2, never the integration lib's silent exit 0).
 Orchestrator exit: `0` clean; `1` a check failed OR **all-skipped/zero-checks**
 under the active profile; `3` an expect-full kind was not verified by a pass.
 
+The summary line's `expect-full-violations=N` counts **every** violation the
+block beneath it names — the git-declared kinds no passing check covered plus the
+children that exited `3` — and `N > 0` is exactly exit `3` (kp-lc5: the counter
+once read `0` while four violations were printed).
+
+## `LIVE_CLUSTER` vs `LIVE_HUB_CLUSTER`
+
+`LIVE_CLUSTER` is the ONE cluster under test and is routinely a **spoke**. Checks
+that assert **hub** fixtures (the `argocd` / `crossplane-system` namespaces and
+the objects in them) address `live_hub_cluster()` instead — `LIVE_HUB_CLUSTER`,
+default `k8-platform-mgmt` — or they skip structurally and can never pass
+(kp-ug3). Such a check reports a missing hub fixture with `hub_fixture_absent`,
+which prints `HUB-FIXTURE-ABSENT <what>`; the orchestrator promotes that skip to
+a **FAIL**, because the hub answered and the absence is structural. A skip for
+absent tooling/creds/relay prints no marker and stays a skip.
+
+## EXPECT-FULL vs the derived coverage set
+
+The gated set is `tests/coverage/derive-coverage.sh --expect-full`: the kinds the
+Compositions declare, MINUS the kinds `tests/coverage/registry.yaml` marks
+`coverage: transitive` (no standalone check; proven by a coupled check's
+assertions, which is why they emit no `COVERS` line of their own — kp-2al.20).
+
 ## `LIVE_PROFILE` (which TIERS run) — default `full`
 
 | profile | tiers | when |

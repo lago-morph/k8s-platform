@@ -37,7 +37,15 @@ MODE="$(live_mode)"
 [ "$MODE" = "mutating" ] \
   || skip "LIVE_MODE is not mutating — skipping guard-fired negative (readonly)"
 
-CLUSTER="${LIVE_CLUSTER:-}"
+# HUB-FIXTURE CHECK (kp-ug3): the fixtures under test live on the HUB (the
+# `crossplane-system` namespace and the objects in it), NOT on the cluster under
+# test — LIVE_CLUSTER is routinely a spoke. It therefore addresses
+# live_hub_cluster() (LIVE_HUB_CLUSTER, default the hub name), and a missing hub
+# fixture is reported with hub_fixture_absent() so the orchestrator promotes the
+# structural skip to a FAIL instead of letting it hide (build6-2042: this check
+# skipped with "crossplane-system namespace not present" while that namespace existed,
+# on the hub).
+CLUSTER="$(live_hub_cluster)"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 HELPER="$REPO_ROOT/scripts/sandbox-kubeconfig.sh"
 
@@ -46,7 +54,7 @@ for bin in aws kubectl session-manager-plugin; do
   command -v "$bin" >/dev/null 2>&1 || skip "$bin not on PATH"
 done
 aws sts get-caller-identity >/dev/null 2>&1 || skip "no usable AWS credentials"
-[ -n "$CLUSTER" ] || skip "no LIVE_CLUSTER set"
+[ -n "$CLUSTER" ] || skip "no hub cluster resolved (LIVE_HUB_CLUSTER is empty)"
 [ -x "$HELPER" ] || skip "helper $HELPER missing/not executable"
 
 # Relay precondition.
@@ -60,7 +68,7 @@ KUBE() { "$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl "$@" 2>&1; }
 
 # Verify Crossplane is installed.
 KUBE get ns crossplane-system >/dev/null 2>&1 \
-  || skip "crossplane-system namespace not present — Crossplane not installed"
+  || hub_fixture_absent "crossplane-system namespace not present — Crossplane not installed"
 
 # Verify the guarding ClusterRole exists — skip if the guard is not deployed.
 KUBE get clusterrole crossplane-composite-externalsecrets >/dev/null 2>&1 \

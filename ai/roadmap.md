@@ -107,9 +107,9 @@ explicit ruling.
 
 | ID | One line | Class | Why |
 |---|---|---|---|
-| Rows 10/11 | Keycloak↔Cognito federation; kubectl via Keycloak | resolved | Proven on clean build #6; both rows `DONE`, oracle `build6-2220` |
+| Rows 10/11 | Keycloak↔Cognito federation; kubectl via Keycloak | resolved | Proven on clean builds #6 and #7; both rows `DONE (2×)`, oracles `build6-2220` and `build7-0152` |
 | OI-2026-06-11-2 | Kyverno OOM / unpullable cleanup jobs / fail-closed webhook | v2.0 (remove now) | Owner: dev-account node memory; removal is the first step 3 bead |
-| OI-2026-06-11-3 | Spokes ship no CSI driver / StorageClass; observability pair Pending | resolved (ordering open) | Fixed and proven live on build #6; the class-then-PVC ordering is `kp-2al.19` |
+| OI-2026-06-11-3 | Spokes ship no CSI driver / StorageClass; observability pair Pending | resolved | Fixed on build #6; the class-then-PVC ordering proven on build #7 (class older than all three PVCs), `kp-2al.19` closed |
 | OI-2026-07-06-5 | No documented access path | docs | Admin page (VPC access, Argo CD password, facts); end-user path proven by build #6; tenant self-service is v2.0 |
 | OI-2026-07-06-4 | No human-executed bring-up | docs + owner | CI-dispatch path declared supported; a person runs it (can double as the step 5 admin scenario) |
 | OI-2026-07-06-1 | XDatabase has no cross-cluster consumption contract | docs (ticket runbook) + v2.0 (self-service) | Tenants cannot place XDatabase on the hub; admin ticket + PushSecret + ExternalSecret works today with no new code |

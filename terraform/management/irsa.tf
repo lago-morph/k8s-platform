@@ -142,6 +142,13 @@ resource "aws_iam_policy" "crossplane_aws" {
           # "AccessDenied iam:GetRolePolicy" (RolePolicy never created).
           "iam:UpdateAssumeRolePolicy", "iam:GetRolePolicy",
           "iam:GetRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+          # DELETE path (build #6 teardown, 2026-09-09): the AWS provider reads
+          # a role's instance profiles before deleting it, so DeleteRole alone
+          # is not enough. Without this, every composed role wedges on
+          # "async delete failed: ... ListInstanceProfilesForRole ... AccessDenied"
+          # and a teardown leaks all five spoke roles. Creates never touch it,
+          # which is why six clean builds did not surface it.
+          "iam:ListInstanceProfilesForRole",
           "iam:TagRole", "iam:UntagRole",
           # PassRole targets are the cluster-role / node-role, both k8-platform-*.
           "iam:PassRole",

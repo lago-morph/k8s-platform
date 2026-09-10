@@ -6,7 +6,14 @@
 #   are scoped to spoke clusters by NAME (*-spoke); the hub in-cluster
 #   server (https://kubernetes.default.svc) is EXPLICITLY excluded.
 #   An Application in the platform-spoke project that targets the hub
-#   must be rejected: "is not permitted in project platform-spoke".
+#   must be rejected. Argo phrases a DESTINATION violation differently from a
+#   source-repo one: measured live on build #7 (2026-09-10) the condition is
+#     InvalidSpecError: application destination server '<hub>' and namespace
+#     '<ns>' do not match any of the allowed destinations in project 'platform-spoke'
+#   whereas a repo violation says "is not permitted in project". Matching only
+#   the repo wording made this check a FALSE NEGATIVE: it reported the guard
+#   ineffective while the guard was firing, and could never have detected a real
+#   destination breach either (kp-2al.27).
 #
 # Red-first discipline:
 #   (a) DENIED: apply an Application in project platform-spoke with
@@ -32,7 +39,15 @@ MODE="$(live_mode)"
 [ "$MODE" = "mutating" ] \
   || skip "LIVE_MODE is not mutating — skipping guard-fired negative (readonly)"
 
-CLUSTER="${LIVE_CLUSTER:-}"
+# HUB-FIXTURE CHECK (kp-ug3): the fixtures under test live on the HUB (the
+# `argocd` namespace and the objects in it), NOT on the cluster under
+# test — LIVE_CLUSTER is routinely a spoke. It therefore addresses
+# live_hub_cluster() (LIVE_HUB_CLUSTER, default the hub name), and a missing hub
+# fixture is reported with hub_fixture_absent() so the orchestrator promotes the
+# structural skip to a FAIL instead of letting it hide (build6-2042: this check
+# skipped with "argocd namespace not present" while that namespace existed,
+# on the hub).
+CLUSTER="$(live_hub_cluster)"
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
 HELPER="$REPO_ROOT/scripts/sandbox-kubeconfig.sh"
 
@@ -41,7 +56,7 @@ for bin in aws kubectl jq session-manager-plugin; do
   command -v "$bin" >/dev/null 2>&1 || skip "$bin not on PATH"
 done
 aws sts get-caller-identity >/dev/null 2>&1 || skip "no usable AWS credentials"
-[ -n "$CLUSTER" ] || skip "no LIVE_CLUSTER set"
+[ -n "$CLUSTER" ] || skip "no hub cluster resolved (LIVE_HUB_CLUSTER is empty)"
 [ -x "$HELPER" ] || skip "helper $HELPER missing/not executable"
 
 # Relay precondition.
@@ -54,7 +69,7 @@ RELAY_ID=$(aws ec2 describe-instances --region "$REGION" \
 KUBE() { "$HELPER" -c "$CLUSTER" -r "$REGION" --exec kubectl "$@" 2>&1; }
 
 KUBE get ns argocd >/dev/null 2>&1 \
-  || skip "argocd namespace not present — ArgoCD not installed"
+  || hub_fixture_absent "argocd namespace not present — ArgoCD not installed"
 KUBE get appproject platform-spoke -n argocd >/dev/null 2>&1 \
   || skip "AppProject platform-spoke not found — guard not deployed"
 
@@ -107,17 +122,17 @@ DENY_RC=$?
 
 DENIED_REASON=""
 
-if echo "$DENY_OUT" | grep -qiE "not permitted|not allowed in project"; then
-  DENIED_REASON="$(echo "$DENY_OUT" | grep -iE "not permitted|not allowed in project" | head -1)"
+if echo "$DENY_OUT" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
+  DENIED_REASON="$(echo "$DENY_OUT" | grep -iE "not permitted|not allowed in project|do not match any of the allowed destinations" | head -1)"
   log "ArgoCD admission webhook rejected the Application immediately"
 elif [ "$DENY_RC" -eq 0 ]; then
   log "Application admitted; polling ArgoCD conditions for guard error (up to $((POLL_ITERS * 2))s)..."
   for _ in $(seq 1 "$POLL_ITERS"); do
     COND=$(KUBE get application "$APP_DENY" -n "$NS" -o json 2>/dev/null \
            | jq -r '[.status.conditions[]?.message // ""] | join("|")' 2>/dev/null || true)
-    if echo "$COND" | grep -qiE "not permitted|not allowed in project"; then
+    if echo "$COND" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
       DENIED_REASON="$(echo "$COND" | tr '|' '\n' \
-        | grep -iE "not permitted|not allowed in project" | head -1)"
+        | grep -iE "not permitted|not allowed in project|do not match any of the allowed destinations" | head -1)"
       break
     fi
     sleep 2
@@ -125,11 +140,11 @@ elif [ "$DENY_RC" -eq 0 ]; then
 fi
 
 if [ -z "$DENIED_REASON" ]; then
-  ng "GUARD DID NOT FIRE: Application '$APP_DENY' with hub destination '$HUB_SERVER' was not rejected and showed no 'not permitted' condition within $((POLL_ITERS * 2))s — AppProject platform-spoke destination guard is not effective"
+  ng "GUARD DID NOT FIRE: Application '$APP_DENY' with hub destination '$HUB_SERVER' was not rejected and showed no destination-denied condition within $((POLL_ITERS * 2))s — AppProject platform-spoke destination guard is not effective"
   exit 1
 fi
 
-if echo "$DENIED_REASON" | grep -qiE "not permitted|not allowed in project"; then
+if echo "$DENIED_REASON" | grep -qiE "not permitted|not allowed in project|do not match any of the allowed destinations"; then
   ok "GUARD FIRED: hub destination rejected in platform-spoke — reason: $DENIED_REASON"
 else
   ng "Denied, but reason does NOT match the platform-spoke destination guard (expected 'not permitted in project'): $DENIED_REASON"

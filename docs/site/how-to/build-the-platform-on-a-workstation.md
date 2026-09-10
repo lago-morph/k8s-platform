@@ -142,11 +142,27 @@ kubectl wait --for=condition=Ready --timeout=2400s \
   xplatformclusters -A --all
 ```
 
-Do **not** wait for the composite cluster resource to become `Ready`
-between the two gates. Its composed EKS identity-provider association
-validates the platform's own Keycloak issuer, and Keycloak only deploys
-after the second gate registers the spoke, so waiting for `Ready` first
-deadlocks a fresh build.
+Wait on the four published facts plus a `Ready` node group between the
+two gates, because those are what the second gate consumes. Do not build
+an expectation around when the composite itself becomes `Ready`.
+
+!!! warning "Corrected 2026-09-10 (build #7)"
+    This page previously said that waiting for the composite to become
+    `Ready` before the second gate "deadlocks a fresh build", because the
+    composed EKS identity-provider association supposedly had to wait for
+    Keycloak. That is false. On build #7 the association reached
+    `Ready=True reason=Available` at 01:13:50Z and the composite at
+    01:14:17Z, while the second gate was not synced until 01:20:40Z — the
+    association completed before Keycloak existed, and no retry loop
+    occurred. On build #6 the composite went `Ready` after the second
+    gate instead. Depend on neither ordering. Tracked as `kp-2al.23`.
+
+    A real effect does exist, and it is a different one: an `ACTIVE`
+    identity-provider association does not mean federated tokens are
+    honoured yet. On build #7 federated `kubectl` was rejected about
+    01:43Z and accepted about 01:54Z, with the brokered login and token
+    claims already correct at the earlier time. Expect `Unauthorized` for
+    a while after a build and retry rather than changing anything.
 
 Once the spoke registers, the fact-driven ApplicationSets fan the
 add-on stack out to it automatically — ingress, DNS, secrets, SSO

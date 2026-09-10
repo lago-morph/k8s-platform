@@ -8,6 +8,11 @@
 #   - injecting a fake kubectl (reads stdin for apply -f -, scripted responses)
 #   - faking aws CLI calls (sts, ec2) so preconditions pass
 #
+# Also asserts the kp-ug3 hub-scoping contract: all three are HUB-FIXTURE checks,
+# so they must address the HUB (live_hub_cluster()) even when LIVE_CLUSTER names a
+# spoke, and a missing hub namespace must emit the HUB-FIXTURE-ABSENT marker the
+# orchestrator promotes to a FAIL — never a silent skip.
+#
 # For each of the three negatives, asserts all four required properties:
 #   (a) skips in readonly (LIVE_MODE=readonly)
 #   (b) passes when the fake denies with the MATCHING reason (guard fired)
@@ -81,7 +86,10 @@ cat > "$FAKE_ROOT/scripts/sandbox-kubeconfig.sh" <<'HELPEREOF'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do
   case "$1" in
-    -c|--cluster|-r|--region|-p|--port) shift 2 ;;
+    # kp-ug3: record which cluster the check relayed through, so the unit test
+    # can prove a hub-fixture check addresses the HUB and not the spoke.
+    -c|--cluster) echo "$2" >> "${FAKE_CLUSTER_LOG:-/dev/null}"; shift 2 ;;
+    -r|--region|-p|--port) shift 2 ;;
     --exec) shift; exec "$@" ;;
     *) shift ;;
   esac
@@ -113,6 +121,20 @@ run_check_rc() {
   local rc=$?
   set -e
   echo "$rc"
+}
+
+# ---- run_check_out <check-name> <env-pairs...> — combined output ------------
+run_check_out() {
+  local name="$1"; shift
+  set +e
+  env \
+    PATH="$WORKDIR/bin:$PATH" \
+    LIVE_CLUSTER="k8-platform-mgmt" \
+    AWS_REGION="us-east-1" \
+    RUN_ID="testrun001" \
+    "$@" \
+    bash "$FAKE_ROOT/tests/live/checks/negative/$name" 2>&1
+  set -e
 }
 
 LIVE_RC_SKIP=2
@@ -251,6 +273,39 @@ case "$CMD" in
 esac
 '
 assert_eq "destination: guard fires with matching reason => pass (0)" \
+  "$LIVE_RC_PASS" \
+  "$(run_check_rc "$DESTGUARD" LIVE_MODE=mutating $POLL_OVERRIDE)"
+
+echo ""
+echo "── destination: (b2) PASSES on Argo's REAL destination wording ───────"
+# kp-2al.27: Argo phrases a DESTINATION violation differently from a repo one.
+# Measured live on build #7 (2026-09-10), verbatim:
+#   InvalidSpecError: application destination server 'https://kubernetes.default.svc'
+#   and namespace 'default' do not match any of the allowed destinations in
+#   project 'platform-spoke'
+# The check used to match only "not permitted", the REPO wording, so it was a
+# false negative: it called an effective guard ineffective, and could not have
+# detected a real breach either. This case pins the server's actual string.
+write_kubectl '
+CMD="$*"
+case "$CMD" in
+  "get ns argocd") echo "argocd   Active"; exit 0 ;;
+  "get appproject platform-spoke -n argocd -o json")
+    printf '"'"'{"spec":{"sourceRepos":["https://github.com/lago-morph/k8-platform.git"]}}\n'"'"'
+    exit 0 ;;
+  "get appproject platform-spoke -n argocd") echo "platform-spoke   project.argoproj.io"; exit 0 ;;
+  "apply -f -")
+    content="$(cat)"
+    if printf "%s" "$content" | grep -q "live-neg-dest-deny"; then
+      echo "error: application destination server '"'"'https://kubernetes.default.svc'"'"' and namespace '"'"'default'"'"' do not match any of the allowed destinations in project '"'"'platform-spoke'"'"'"
+      exit 1
+    fi
+    echo "application.argoproj.io created"; exit 0 ;;
+  delete*|*"--ignore-not-found"*) exit 0 ;;
+  *) exit 0 ;;
+esac
+'
+assert_eq "destination: Argo's real destination wording => pass (0)" \
   "$LIVE_RC_PASS" \
   "$(run_check_rc "$DESTGUARD" LIVE_MODE=mutating $POLL_OVERRIDE)"
 
@@ -405,6 +460,85 @@ else
   _fail "rbac: wrong denial reason should produce FAIL" \
     "got exit $rc (expected non-zero non-skip)"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# kp-ug3 — hub scoping: the three negatives are HUB-FIXTURE checks
+# ═══════════════════════════════════════════════════════════════════════════════
+# build6-2042 ran with LIVE_CLUSTER=k8-platform-services (a SPOKE) and all three
+# skipped with "<ns> namespace not present" — both namespaces existed, on the hub.
+# Two properties close that: (1) the relay targets live_hub_cluster(), never
+# LIVE_CLUSTER; (2) a genuinely missing hub namespace emits HUB-FIXTURE-ABSENT,
+# which the orchestrator promotes to a FAIL (see tests/unit/test_live_orchestrator.sh).
+
+echo ""
+echo "── kp-ug3: the hub default and the override ─────────────────────────"
+assert_eq "live_hub_cluster() defaults to the hub, not LIVE_CLUSTER" "k8-platform-mgmt" \
+  "$(LIVE_CLUSTER=k8-platform-services bash -c '. tests/live/lib/live-lib.sh; live_hub_cluster')"
+assert_eq "LIVE_HUB_CLUSTER overrides the default" "some-other-hub" \
+  "$(LIVE_HUB_CLUSTER=some-other-hub bash -c '. tests/live/lib/live-lib.sh; live_hub_cluster')"
+
+# A kubectl that answers every hub query (guard fires) — reused for all three.
+hub_ok_kubectl() {
+  write_kubectl '
+CMD="$*"
+case "$CMD" in
+  "get ns argocd") echo "argocd   Active"; exit 0 ;;
+  "get ns crossplane-system") echo "crossplane-system   Active"; exit 0 ;;
+  "get clusterrole crossplane-composite-externalsecrets") echo "ok"; exit 0 ;;
+  "get clusterrolebinding crossplane-composite-externalsecrets") echo "ok"; exit 0 ;;
+  auth*can-i*get*clustersecretstores*) echo "no"; exit 1 ;;
+  auth*can-i*get*externalsecrets*) echo "yes"; exit 0 ;;
+  *"-o json"*)
+    printf '"'"'{"spec":{"sourceRepos":["https://github.com/lago-morph/k8-platform.git"]}}\n'"'"'
+    exit 0 ;;
+  "apply -f -")
+    content="$(cat)"
+    if printf "%s" "$content" | grep -qE "live-neg-(appproj|dest)-deny"; then
+      echo "error: is not permitted in project"
+      exit 1
+    fi
+    echo "application.argoproj.io created"; exit 0 ;;
+  delete*|*"--ignore-not-found"*) exit 0 ;;
+  *) exit 0 ;;
+esac
+'
+}
+
+# A kubectl on which the HUB ANSWERS but the fixture namespace is absent.
+hub_missing_ns_kubectl() {
+  write_kubectl '
+CMD="$*"
+case "$CMD" in
+  "get ns argocd"|"get ns crossplane-system")
+    echo "Error from server (NotFound): namespaces \"x\" not found" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+'
+}
+
+for chk in "$SRCREPO" "$DESTGUARD" "$RBACGUARD"; do
+  echo ""
+  echo "── kp-ug3: $chk relays through the HUB while LIVE_CLUSTER is a spoke ──"
+  hub_ok_kubectl
+  : > "$WORKDIR/cluster.log"
+  rc="$(run_check_rc "$chk" LIVE_MODE=mutating $POLL_OVERRIDE \
+          LIVE_CLUSTER=k8-platform-services \
+          FAKE_CLUSTER_LOG="$WORKDIR/cluster.log")"
+  assert_eq "$chk: spoke under test, hub fixtures present ⇒ pass (0)" "$LIVE_RC_PASS" "$rc"
+  relayed="$(sort -u "$WORKDIR/cluster.log" | tr '\n' ' ' | sed 's/ $//')"
+  assert_eq "$chk: every relay targeted the hub only" "k8-platform-mgmt" "$relayed"
+
+  echo "── kp-ug3: $chk marks a MISSING hub namespace structurally ──────────"
+  hub_missing_ns_kubectl
+  out="$(run_check_out "$chk" LIVE_MODE=mutating $POLL_OVERRIDE \
+          LIVE_CLUSTER=k8-platform-services)"
+  assert_contains "$chk: emits the HUB-FIXTURE-ABSENT marker" "HUB-FIXTURE-ABSENT" "$out"
+  assert_contains "$chk: names the namespace that was absent" "namespace not present" "$out"
+  rc="$(run_check_rc "$chk" LIVE_MODE=mutating $POLL_OVERRIDE \
+          LIVE_CLUSTER=k8-platform-services)"
+  assert_eq "$chk: still exits with the skip code (the runner promotes it)" \
+    "$LIVE_RC_SKIP" "$rc"
+done
 
 # ──────────────────────────────────────────────────────────────────────────────
 assert_summary

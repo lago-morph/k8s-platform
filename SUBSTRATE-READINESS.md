@@ -48,6 +48,155 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ## The readiness checklist
 
+**Clean build #7 — 2026-09-10, the same account as build #6 (`801822495028`), <!-- noqa: account-id - run provenance, account rotates -->
+emptied to nothing and rebuilt from scratch**
+**(seventh consecutive from-scratch build; the DOCUMENTATION build — the
+bring-up was executed by a FENCED AGENT allowed to read only
+`docs/site/how-to/build-the-platform-from-nothing.md` and no other file in
+this repository, so the build tested the page as much as the platform.
+Single-SHA on the PLATFORM side — every apply and both gate syncs ran one
+`main` SHA — but the verification harness ran a different, branch SHA; the
+SHA note below says which did what.)**
+Region us-east-1; hub EKS `k8-platform-mgmt`, spoke EKS
+`k8-platform-services`.
+**The teardown that preceded it:** management destroy **34419405234**
+(13 min) → base destroy **34420560366**. An IAM fix landed mid-teardown
+(commit `6e84258`, so that role DELETE could succeed) and was applied by
+management run **34418948661** in **48 s**. The account was then verified
+empty: no EKS clusters, zero load balancers, zero RDS instances, and no
+`k8-platform-*` IAM roles besides the hub's.
+**SHA note (two SHAs, doing different work):**
+`3298e70f614d793f040ea4d6b97c4455cfe028b9` = `main`, the SHA the
+**platform** was built from — probe, base, management and **both** gate
+syncs ·
+`bf520ba353d4544339175076ea66dacbf49d2bcc` = the branch head carrying the
+**harness** fixes, and the ref live-verify ran. The two sandbox oracle
+runs ran the same **branch** harness: `kp-ug3`'s hub-targeting fix was in
+it (hence zero skips), while the destination-guard check's own defect
+still was (hence that check's failure) — the fix for it is `bf520ba`
+itself, so the oracle runs sit at or before that commit. **No single SHA
+produced all of the evidence below:** the platform is `3298e70`, the
+verification is the branch at `bf520ba`; neither covers the other.
+Build chain: probe (`test` / `test-e2e`) **34421037502**, green in **19 s**
+(creds 3/3, zone 4/4, state-backend 2/2) — **green where the page
+documents red**: the teardown left the state backend behind, so the
+state-backend check read 2/2 instead of the documented 2 FAIL. That is an
+artefact of rebuilding a *used* account, not the fresh-account signature
+the page describes → base **34421097160**, `apply-and-verify` success,
+**2m55s** → management **34421376617**, success, **17m24s** → gate 1
+`platform-cluster-claim` synced at `3298e70…`: XPlatformCluster
+`platform/platform` published its four facts and the node group reached
+Ready, about **24 minutes** from sync → gate 2 `spoke-access`, same SHA,
+synced **01:20:40Z**: registration Secret `platform-spoke` present in hub
+namespace `argocd` at **11 s**, carrying all six `k8-platform.io/*`
+annotations exactly as documented; XSpokeAccess Ready=True at about
+**6m10s**.
+**Ordering that matters, measured:**
+`identityproviderconfig/platform-5183a6d2c254` (owner
+`XPlatformCluster/platform`) reached `Ready=True reason=Available` at
+**01:13:50Z** and the composite at **01:14:17Z** — both **before** gate 2
+was synced at **01:20:40Z**.
+**Verification, measured by the fenced operator:** **17 Applications**, all
+Synced/Healthy except `workload1-cluster` (OutOfSync by design) · hello
+endpoint **HTTP 200 in 0.50 s**, body `hello from the k8-platform
+platform-services cluster` · **Argo CD HTTP 200** · Keycloak **OIDC
+discovery HTTP 200** with the expected issuer · five composites all
+Synced=True Ready=True: `xplatformcluster`, `xspokeaccess`,
+`xdatabase/keycloak-db` and two `xplatformsecret`.
+**The storage ordering build #6 could NOT establish (bead `kp-2al.19`, now
+closed):** StorageClass `gp3 (default)` / `ebs.csi.aws.com` age **6m57s**
+against the three monitoring PVCs at **6m50s**, **6m22s** and **6m17s** —
+the default class existed **before every PVC**, and all three bound on gp3
+with **no retroactive assignment**. That is exactly the class-then-PVC
+ordering build #6 had to leave `pending clean-build verification`.
+**Oracle suite, two runs on this build** (sandbox, branch harness at or
+before `bf520ba`, `LIVE_CLUSTER=k8-platform-services`,
+`LIVE_PROFILE=full`, mode mutating):
+
+- `build7-0135`: **pass=27 skip=0 fail=2**. **Zero skips is new** — the
+  hub-targeting fix (`kp-ug3`) stopped three checks skipping structurally,
+  so the two ArgoCD AppProject guards and the Crossplane RBAC scope guard
+  executed at all for the first time. The two failures: the federation
+  check's kubectl leg, and the AppProject destination guard.
+- `build7-0152`: **pass=28 skip=0 fail=1**. **Federation PASSED** —
+  `username=kc:oracle-build7-0152@federation-oracle.invalid
+  groups∋kc:k8s-viewers`. Only the destination guard still failed.
+
+Every row's build-#7 entry in the table below rests on that second run:
+one check failed on `build7-0152` and it was the destination guard, so
+every other check in the suite passed on this build.
+**Both failures were diagnosed, and the diagnoses are part of the
+evidence:**
+
+1. **The destination-guard failure was a defect in the CHECK, not the
+   platform** (`kp-2al.27`, fixed in commit `bf520ba`). A `platform-spoke`
+   Application aimed at the hub was applied and watched for 120 s: the
+   guard fired within **20 s** and stayed fired at every sample —
+   `InvalidSpecError: application destination server
+   'https://kubernetes.default.svc' and namespace 'default' do not match
+   any of the allowed destinations in project 'platform-spoke'`. The check
+   matched only "not permitted", which is Argo's *source repo* wording, so
+   it was a **false negative that would have reported exactly the same had
+   the guard been removed**. It had never executed on any build before
+   `kp-ug3`'s fix let it run. (The 120-second Application was a deliberate
+   negative control and was not a fix: nothing was mutated to make a check
+   pass.)
+2. **The federation failure was a timing window, not breakage.** An
+   `ACTIVE` EKS identity-provider association does not immediately honour
+   tokens: the kubectl leg was rejected at about **01:43Z** — with the
+   brokered login and the id_token claims already passing at that same
+   moment — and accepted at about **01:54Z**, roughly **ten to twenty-five
+   minutes after the build**.
+
+**live-verify (the recorded CI producer):** run **34428165725**, ref
+`bf520ba353d4544339175076ea66dacbf49d2bcc`, `profile=full`, conclusion
+**success**, evidence artifact **10133798389** uploaded **02:22:21Z**.
+**Caveats on this build — recorded, not softened:**
+
+- **The platform SHA and the verification SHA are not the same.** The
+  platform was built from `main` `3298e70`; the oracle suite and
+  live-verify ran the **branch** code (live-verify at ref `bf520ba`,
+  which carries the harness fixes; the oracle runs at or before it, since
+  the guard-check defect `bf520ba` fixes was still failing on them). Do
+  not read either SHA as covering the other.
+- **The probe was green where the documentation says red.** The teardown
+  left the state backend in place, so the state-backend check read 2/2
+  rather than the documented 2 FAIL — the signature of a rebuilt used
+  account, not of a fresh one.
+- **The bring-up was executed by a fenced agent, not a person.**
+  `kp-2al.10` — a human executing this page on a fresh account —
+  **remains open**, and the page keeps its `status: contract` marker.
+- **The Argo CD browser sign-in is unverified.** Chromium cannot reach any
+  host through this sandbox's proxy, so the fenced operator verified the
+  admin credential through the `argocd` CLI against the same API instead.
+  The browser experience was not exercised on this build.
+- **The certificate the sandbox validated was the egress gateway's, not
+  the ACM chain.** The operator's HTTPS goes through a TLS-intercepting
+  egress gateway, so what its `curl` validated on the hello and Argo CD
+  endpoints was the gateway's certificate. The public certificate is good
+  transitively, but the **ACM chain was not directly verified from the
+  sandbox** on this build.
+- **The `kp-lc5` counter gap is settled by this build.** Both oracle runs
+  printed the full summary line, and the counter agreed with the printed
+  block on each: `build7-0135` read
+  `pass=27 skip=0 fail=2 expect-full-violations=0 checks=29` and
+  `build7-0152` read
+  `pass=28 skip=0 fail=1 expect-full-violations=0 checks=29`, with no
+  violation block printed on either — where build #6 read
+  `expect-full-violations=0` while printing four violations and exiting 3.
+- **The dry run produced nine documentation findings** (`kp-2al.23`
+  through `kp-2al.26`), three of them serious — including that the page's
+  **most emphatic warning was false**. The corrections are committed in
+  `53b8cc0` and `1b94c01`.
+- **Live mutations on this build, recorded rather than implied:** the two
+  gate syncs (the documented deliberate-gate step, executed by the fenced
+  agent from the sandbox), the mutating-mode oracle fixtures the suite
+  creates and self-reaps by design, and the 120-second negative-control
+  `platform-spoke` Application used to diagnose the destination guard.
+  **None of them was a fix** — nothing was mutated to make a check or a
+  feature pass. No broader "zero hand-mutation" claim is made here beyond
+  that enumeration.
+
 **Clean build #6 — 2026-09-09, rotated account `801822495028`** <!-- noqa: account-id - run provenance, account rotates -->
 **(sixth consecutive from-scratch build; the IDENTITY build — rows 10 and 11
 earn their first clean-build evidence and OI-2026-06-11-3 closes. NOT a
@@ -76,10 +225,17 @@ both 254 = the documented expected signature before bootstrap) → base
 management re-apply **34410469157** (branch @ `4364d4a`, success
 22:06Z–22:07Z; the widened verifier/reaper policy) → gate 1
 `platform-cluster-claim` synced by `kubectl patch` at the explicit SHA
-`bc1cbb6`, `.status.sync.revision` confirmed equal to it: XPlatformCluster
+`bc1cbb6`, `.status.sync.revision` observed equal to it afterwards — which
+establishes that the Application's target revision was that SHA, **not**
+that a sync operation completed at it (Argo sets that field from the target
+revision it has observed, so it can already hold the right SHA before any
+sync; the stronger `.status.operationState` check that would have proved a
+completed sync at that SHA was not performed on this build — kp-2al.24,
+found 2026-09-10): XPlatformCluster
 `platform/platform` published `oidcIssuer`, `endpoint`, `clusterCaData` and
 `certificateArn`, nodegroup `platform-78032583fa77` reached Ready, **15 min**
-from sync → gate 2 `spoke-access`, same explicit SHA, revision confirmed:
+from sync → gate 2 `spoke-access`, same explicit SHA, `.status.sync.revision`
+observed equal to it with the same caveat:
 registration Secret `platform-spoke` appeared in hub namespace `argocd`
 **within the first 30-second check**, carrying the full ADR-0010 contract
 (all the `k8-platform.io/*` annotations; `config` decoding to
@@ -299,17 +455,17 @@ the committed oracles passing on this build: `hello-e2e-live.sh` PASS,
 
 | # | Item / known gap | Durable fix | Clean-build evidence | Status |
 |---|---|---|---|---|
-| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | Builds #1–#3: the spoke nodegroup created from scratch under the committed narrowed policy on three consecutive fresh accounts — 2 Ready nodes each (`sandbox-kubectl-relay.sh` PASS all three). (The earlier auto-016 "VALIDATED" stays retracted — see `retrospective/2026-06-09-214-a.md`.) Build #5: 2 Ready nodes again (relay oracle PASS, RUN_ID build5-2347). Build #6: 2 Ready nodes again on the rotated account (relay oracle PASS, RUN_ID build6-2220). | **DONE (5× clean build)** |
-| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | `hub-eks-api-ingress` classic SecurityGroupRule (PR #221) | Builds #1–#3: hub ArgoCD synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes on all three accounts; `hello-e2e-live.sh` asserts `spoke-hello` Synced+Healthy from the hub (PASS all three). Build #5: PASS again (200 in 21 s). Build #6: PASS again (200 + marker in 1 s; the hub synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes). | **DONE (5× clean build)** |
-| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | terraform/base `hosted_cluster_names` tags (PR #222) | Builds #1–#3: the spoke ingress NLB provisioned in the shared subnets with zero `create-tags` hand-fixes on all three accounts (hello 200 terminates on that NLB with the spoke's ACM cert). Build #5: same, zero hand-fixes. Build #6: same, zero `create-tags` hand-fixes — hello 200 terminates on the spoke's NLB with its ACM cert (certificate ISSUED, all DomainValidationOptions SUCCESS, validation CNAME matched in zone Z08868662UCA0EHI3H5KH). | **DONE (5× clean build)** |
-| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010**) | ApplicationSets consumer half (PR #218) + row-5 producer | Builds #1–#3: all seven ApplicationSets generated from the registration Secret's contract annotations on all three accounts; spoke-hello/-ingress-nginx/-external-dns Synced+Healthy with **no hand overlay anywhere**. Build #5: all seven again, incl. keycloak. Build #6: generated again from the contract annotations with no hand overlay anywhere — including the NEW `spoke-storage` ApplicationSet, whose Application came up Synced/Healthy off the same labeled cluster Secret after the merge to `96279fd`. | **DONE (5× clean build)** |
-| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | ADR-0010 PR-2 producer (PR #220; retires the spec.oidcIssuer overlay) | Builds #1–#3: `platform-spoke` Secret produced by the Composition (Observe→writer Objects), full contract real on all three accounts; `spoke-cluster-secret-live.sh` PASS all three; ArgoCD connection Successful (apps synced through it). Build #5: PASS again (full contract). Build #6: PASS again — `platform-spoke` complete on its own within the FIRST 30-second check (full contract; `config` → `awsAuthConfig.clusterName` = `k8-platform-services` + 1492 bytes caData), apps synced through it. | **DONE (5× clean build)** |
-| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | Clean build #2: `keycloak-db` auto-synced from `main` and provisioned RDS from scratch under the narrowed policy (XR Synced+Ready=True ~10 min, `rds-instance-live.sh` PASS, instance `available`). Caveat (build #2): the instance landed in the DEFAULT VPC (OI-2026-06-11-1). Build #3: fresh CREATE landed directly in the BASE VPC under the merged #226/#227 fix (`rds-instance-live.sh` PASS after the #235 oracle bool fix) and Keycloak CONNECTS through it (`keycloak-e2e-live.sh` PASS — the OI-2026-06-07-5 close). Build #5: fresh CREATE in the base VPC again, `rds-instance-live.sh` PASS. Build #6: fresh CREATE again under the narrowed policy, `rds-instance-live` PASS (XDatabase-provisioned instance `available`, RUN_ID build6-2220) and Keycloak connects through it. | **DONE (4× clean build)** |
-| 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | Clean build #2: management run 27380296208 applied the EC2VpcScoped/EC2Unconditioned Sids; the spoke's kube-relay-ingress + hub-eks-api-ingress SecurityGroupRule MRs created under them (relay oracle PASS = the rules function; hub→spoke sync = the API rule functions). Build #3 (run 27430525986): same CREATE path green again, plus the XDatabase SecurityGroup + 5432 rule created from scratch (the rds:5432 path keycloak now traverses). Build #5: same CREATE path green again (mgmt run 28757800712). Build #6: same CREATE path green again (mgmt run 34397369089, re-apply 34410469157) — relay oracle PASS (the kube-relay rule functions) and the hub synced every spoke app over the private endpoint (the API rule functions). | **DONE (4× clean build)** |
-| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Builds #1–#3: PASS on all three accounts (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy; 1s to first 200 on builds #2+#3). Build #5: PASS (21 s). Build #6: PASS (HTTP 200 + body marker after 1 s; hub-side `spoke-hello` Synced/Healthy; RUN_ID build6-2220). | **DONE (5× clean build)** |
-| 9 | Keycloak **boots** against RDS through the spoke ingress (OI-2026-06-07-5) | cross-cluster DB path (hub PushSecret → ASM → spoke ExternalSecret + extraEnvVarsSecret host/port) | Clean build #3: `keycloak-e2e-live.sh` PASS — realm imports, https OIDC discovery 200. Four first-boot defects fixed in code mid-build (#231–#234). Build #5: `keycloak-e2e-live.sh` PASS again — and the DB path now rides the ADR-0012 material chain end-to-end (its first oracle-recorded build). Build #6: PASS again on the rotated account (OIDC discovery 200 with the expected issuer, hub `spoke-keycloak` Synced/Healthy, RUN_ID build6-2220) — and this is the build where the realm's Cognito broker imported (row 10). | **DONE (3× clean build)** |
-| 10 | Keycloak **federation live-wired** to Cognito (REQ-AUTH-02/08) | BUILT 2026-07-06 (this branch): the broker + mappers are back in the realm as `${KC_COGNITO_*}` env placeholders substituted at `--import-realm` (mechanism verified empirically on the pinned Keycloak 24.0.5); delivery = terraform/base → ASM `k8-platform/base/cognito` → spoke ES → NON-optional secretKeyRef env (fail-closed, the #233 class prevented by construction). Contract pinned by `test_keycloak_cognito_idp_contract.sh`; committed realm boot-verified in docker. NOTE: a live realm never re-imports (IGNORE_EXISTING) — first live exercise is the next from-scratch build. | Realm import runs only on a fresh Keycloak DB ⇒ evidence must come from a clean build with this merged; the federation oracle (`cognito-federation-live.sh`) records it. Hosted-UI leg live-verified standalone on build #5. Post-merge retrofit (2026-07-06, build-#5 cluster): the DELIVERY chain proved live — base apply 28761827039 staged ASM `k8-platform/base/cognito`, spoke ES synced 12 s later (8-key Secret), both KC pods rolled with the fail-closed `KC_COGNITO_*` env; broker confirmed ABSENT in the live realm via the admin API (IGNORE_EXISTING, as documented) — the import half is exactly what build #6 must evidence. A live-drift defect in the new ES manifest (three ESO CRD-default enums omitted from `dataFrom[].extract`) was found and fixed red-first this branch (L40 lint). **Clean build #6 (2026-09-09, rotated account — see the build-#6 block above) is the flip:** the realm imported on a fresh Keycloak DB from committed source (delivery rode base apply **34396955442** → ASM `k8-platform/base/cognito` → spoke ES → fail-closed `KC_COGNITO_*` env), and the federation oracle PASSED on that build (sandbox, RUN_ID `build6-2220`, `LIVE_PROFILE=full`, mode mutating, 22:20Z–22:28Z, against merged `main` `96279fd`): the broker chain leaves Keycloak for the Cognito `/oauth2/authorize` endpoint, brokered login issued an authorization code (the Cognito → Keycloak leg live), id_token claims correct — `preferred_username=oracle-build6-2220@federation-oracle.invalid`, groups ∋ `k8s-viewers`. Two caveats recorded with it: the evidence is from the POST-FIX oracle run (the earlier `build6-2042` run was fail=1 on a defect in the CHECK — it read only the first redirect hop, bead `kp-8vs`, fixed in this build's own commits), and build #6 is not a single-SHA build (SHA map in the build-#6 block). | **DONE (1× clean build: #6)** |
-| 11 | EKS clusters federate kubectl auth to Keycloak (REQ-AUTH-07/09/10) | BUILT 2026-07-06 (this branch): `IdentityProviderConfig` composed into the platform-cluster Composition (resource 16 — clientId `kubernetes`, `preferred_username`/`groups`, both prefixed `kc:`, issuer combined from the same env pair as the ACM cert + KC_HOSTNAME; external-name `keycloak`). Ships with its coverage-oracle entry, live check, claim-contract unit test, regenerated render golden, and CRD schema. The REQ-AUTH-10 federation oracle (`cognito-federation-live.sh`) drives the whole path headlessly with a self-reaped directory fixture user. | **Post-merge observed live 2026-07-06** on the build-#5 cluster: the XR gained the association by GitOps auto-sync and it reached ACTIVE — `eks-identity-provider-config-live` PASS, composite XR Ready=True (no wedge). That proves the EKS-side half live, but is NOT clean-build evidence: the realm broker (rows-10 half) only imports on a fresh Keycloak DB, so the composed-from-scratch + federation-oracle evidence still records on the next clean build. **Clean build #6 (2026-09-09) records it:** the IdentityProviderConfig `keycloak` on `k8-platform-services` was composed from scratch and reached ACTIVE with claims matching the `kc-*` binding contract (issuer `https://auth.platform.<domain>/realms/platform`), and federated kubectl PASSED on that build — `username=kc:oracle-build6-2220@federation-oracle.invalid groups∋kc:k8s-viewers` on `k8-platform-services` (RUN_ID `build6-2220`, mutating, against merged `main` `96279fd`). Same two caveats as row 10: post-fix oracle run, and build #6 is not a single-SHA build. | **DONE (1× clean build: #6)** |
+| 1 | EKS service-linked-role `iam:GetRole` (zero-node spoke) | PR #213 (committed `irsa.tf`) | Builds #1–#3: the spoke nodegroup created from scratch under the committed narrowed policy on three consecutive fresh accounts — 2 Ready nodes each (`sandbox-kubectl-relay.sh` PASS all three). (The earlier auto-016 "VALIDATED" stays retracted — see `retrospective/2026-06-09-214-a.md`.) Build #5: 2 Ready nodes again (relay oracle PASS, RUN_ID build5-2347). Build #6: 2 Ready nodes again on the rotated account (relay oracle PASS, RUN_ID build6-2220). Build #7: the spoke node group was created from scratch again on the emptied-and-rebuilt account and reached Ready (gate 1, ~24 min from sync); the relay oracle PASSED again (RUN_ID `build7-0152`, pass=28 skip=0 fail=1, the one failure being a CHECK defect — see the build-#7 block). | **DONE (6× clean build)** |
+| 2 | Hub→spoke EKS-API SG 443 (OI-2026-06-07-4) | `hub-eks-api-ingress` classic SecurityGroupRule (PR #221) | Builds #1–#3: hub ArgoCD synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes on all three accounts; `hello-e2e-live.sh` asserts `spoke-hello` Synced+Healthy from the hub (PASS all three). Build #5: PASS again (200 in 21 s). Build #6: PASS again (200 + marker in 1 s; the hub synced every spoke-* Application on the spoke's private endpoint with zero SG hand-fixes). Build #7: PASS again — hello HTTP 200 in 0.50 s with the body marker, and the hub synced all 17 Applications (hub-side `spoke-hello` Synced/Healthy) on the spoke's private endpoint with zero SG hand-fixes (RUN_ID `build7-0152`). | **DONE (6× clean build)** |
+| 3 | Shared ELB subnet tags (OI-2026-06-07-3) | terraform/base `hosted_cluster_names` tags (PR #222) | Builds #1–#3: the spoke ingress NLB provisioned in the shared subnets with zero `create-tags` hand-fixes on all three accounts (hello 200 terminates on that NLB with the spoke's ACM cert). Build #5: same, zero hand-fixes. Build #6: same, zero `create-tags` hand-fixes — hello 200 terminates on the spoke's NLB with its ACM cert (certificate ISSUED, all DomainValidationOptions SUCCESS, validation CNAME matched in zone Z08868662UCA0EHI3H5KH). Build #7: same again on the rebuilt account, zero `create-tags` hand-fixes — hello 200 terminates on the spoke's NLB and the suite's certificate checks passed (RUN_ID `build7-0152`). Caveat: the fenced operator's `curl` ran through a TLS-intercepting egress gateway, so the chain it validated was the gateway's — the ACM chain itself was not directly verified from the sandbox on this build. | **DONE (6× clean build)** |
+| 4 | Placeholder overlays vs bootstrap selfHeal (OI-2026-06-07-2, **ADR-0010**) | ApplicationSets consumer half (PR #218) + row-5 producer | Builds #1–#3: all seven ApplicationSets generated from the registration Secret's contract annotations on all three accounts; spoke-hello/-ingress-nginx/-external-dns Synced+Healthy with **no hand overlay anywhere**. Build #5: all seven again, incl. keycloak. Build #6: generated again from the contract annotations with no hand overlay anywhere — including the NEW `spoke-storage` ApplicationSet, whose Application came up Synced/Healthy off the same labeled cluster Secret after the merge to `96279fd`. Build #7: generated again from the contract annotations with no hand overlay anywhere — 17 Applications, all Synced/Healthy except `workload1-cluster` (OutOfSync by design), `spoke-storage` among them from the start of the build rather than after a merge. **And the spoke-storage ordering build #6 could not establish is now evidenced:** default class `gp3`/`ebs.csi.aws.com` age 6m57s against the three monitoring PVCs at 6m50s, 6m22s and 6m17s — the class existed before every PVC and all three bound on gp3 with no retroactive assignment (bead `kp-2al.19` closed; build #6's ordering caveat retired). | **DONE (6× clean build)** |
+| 5 | Spoke ArgoCD cluster-Secret durable form (OI-2026-06-07-1) | ADR-0010 PR-2 producer (PR #220; retires the spec.oidcIssuer overlay) | Builds #1–#3: `platform-spoke` Secret produced by the Composition (Observe→writer Objects), full contract real on all three accounts; `spoke-cluster-secret-live.sh` PASS all three; ArgoCD connection Successful (apps synced through it). Build #5: PASS again (full contract). Build #6: PASS again — `platform-spoke` complete on its own within the FIRST 30-second check (full contract; `config` → `awsAuthConfig.clusterName` = `k8-platform-services` + 1492 bytes caData), apps synced through it. Build #7: PASS again — `platform-spoke` present in hub namespace `argocd` at **11 s** with all six `k8-platform.io/*` annotations exactly as documented, and the full 17-Application stack synced through it (RUN_ID `build7-0152`). | **DONE (6× clean build)** |
+| 6 | RDS narrowing safe on the CREATE path (#211) | PR #211 (committed) | Clean build #2: `keycloak-db` auto-synced from `main` and provisioned RDS from scratch under the narrowed policy (XR Synced+Ready=True ~10 min, `rds-instance-live.sh` PASS, instance `available`). Caveat (build #2): the instance landed in the DEFAULT VPC (OI-2026-06-11-1). Build #3: fresh CREATE landed directly in the BASE VPC under the merged #226/#227 fix (`rds-instance-live.sh` PASS after the #235 oracle bool fix) and Keycloak CONNECTS through it (`keycloak-e2e-live.sh` PASS — the OI-2026-06-07-5 close). Build #5: fresh CREATE in the base VPC again, `rds-instance-live.sh` PASS. Build #6: fresh CREATE again under the narrowed policy, `rds-instance-live` PASS (XDatabase-provisioned instance `available`, RUN_ID build6-2220) and Keycloak connects through it. Build #7: fresh CREATE again under the narrowed policy, this time from an account verified to hold zero RDS instances beforehand — `xdatabase/keycloak-db` Synced=True Ready=True, `rds-instance-live` PASS, and Keycloak connects through it (OIDC discovery 200; RUN_ID `build7-0152`). | **DONE (5× clean build)** |
+| 7 | EC2 narrowing safe on the CREATE path (#212) | PR #212 (committed) | Clean build #2: management run 27380296208 applied the EC2VpcScoped/EC2Unconditioned Sids; the spoke's kube-relay-ingress + hub-eks-api-ingress SecurityGroupRule MRs created under them (relay oracle PASS = the rules function; hub→spoke sync = the API rule functions). Build #3 (run 27430525986): same CREATE path green again, plus the XDatabase SecurityGroup + 5432 rule created from scratch (the rds:5432 path keycloak now traverses). Build #5: same CREATE path green again (mgmt run 28757800712). Build #6: same CREATE path green again (mgmt run 34397369089, re-apply 34410469157) — relay oracle PASS (the kube-relay rule functions) and the hub synced every spoke app over the private endpoint (the API rule functions). Build #7: same CREATE path green again in a single management apply (run 34421376617, 17m24s, no re-apply) — relay oracle PASS and the hub synced all 17 Applications over the spoke's private endpoint (RUN_ID `build7-0152`). | **DONE (5× clean build)** |
+| 8 | Hello hub→spoke e2e (OI-2026-06-08-2) | PR #210 (check authored) | Builds #1–#3: PASS on all three accounts (HTTP 200 + body marker + hub-side `spoke-hello` Synced+Healthy; 1s to first 200 on builds #2+#3). Build #5: PASS (21 s). Build #6: PASS (HTTP 200 + body marker after 1 s; hub-side `spoke-hello` Synced/Healthy; RUN_ID build6-2220). Build #7: PASS (HTTP 200 in 0.50 s, body `hello from the k8-platform platform-services cluster`; hub-side `spoke-hello` Synced/Healthy; RUN_ID `build7-0152`). | **DONE (6× clean build)** |
+| 9 | Keycloak **boots** against RDS through the spoke ingress (OI-2026-06-07-5) | cross-cluster DB path (hub PushSecret → ASM → spoke ExternalSecret + extraEnvVarsSecret host/port) | Clean build #3: `keycloak-e2e-live.sh` PASS — realm imports, https OIDC discovery 200. Four first-boot defects fixed in code mid-build (#231–#234). Build #5: `keycloak-e2e-live.sh` PASS again — and the DB path now rides the ADR-0012 material chain end-to-end (its first oracle-recorded build). Build #6: PASS again on the rotated account (OIDC discovery 200 with the expected issuer, hub `spoke-keycloak` Synced/Healthy, RUN_ID build6-2220) — and this is the build where the realm's Cognito broker imported (row 10). Build #7: PASS again on the emptied-and-rebuilt account — Keycloak booted against a freshly created RDS instance and OIDC discovery answered HTTP 200 with the expected issuer, `xdatabase/keycloak-db` and both XPlatformSecret composites Synced=True Ready=True (RUN_ID `build7-0152`). | **DONE (4× clean build)** |
+| 10 | Keycloak **federation live-wired** to Cognito (REQ-AUTH-02/08) | BUILT 2026-07-06 (this branch): the broker + mappers are back in the realm as `${KC_COGNITO_*}` env placeholders substituted at `--import-realm` (mechanism verified empirically on the pinned Keycloak 24.0.5); delivery = terraform/base → ASM `k8-platform/base/cognito` → spoke ES → NON-optional secretKeyRef env (fail-closed, the #233 class prevented by construction). Contract pinned by `test_keycloak_cognito_idp_contract.sh`; committed realm boot-verified in docker. NOTE: a live realm never re-imports (IGNORE_EXISTING) — first live exercise is the next from-scratch build. | Realm import runs only on a fresh Keycloak DB ⇒ evidence must come from a clean build with this merged; the federation oracle (`cognito-federation-live.sh`) records it. Hosted-UI leg live-verified standalone on build #5. Post-merge retrofit (2026-07-06, build-#5 cluster): the DELIVERY chain proved live — base apply 28761827039 staged ASM `k8-platform/base/cognito`, spoke ES synced 12 s later (8-key Secret), both KC pods rolled with the fail-closed `KC_COGNITO_*` env; broker confirmed ABSENT in the live realm via the admin API (IGNORE_EXISTING, as documented) — the import half is exactly what build #6 must evidence. A live-drift defect in the new ES manifest (three ESO CRD-default enums omitted from `dataFrom[].extract`) was found and fixed red-first this branch (L40 lint). **Clean build #6 (2026-09-09, rotated account — see the build-#6 block above) is the flip:** the realm imported on a fresh Keycloak DB from committed source (delivery rode base apply **34396955442** → ASM `k8-platform/base/cognito` → spoke ES → fail-closed `KC_COGNITO_*` env), and the federation oracle PASSED on that build (sandbox, RUN_ID `build6-2220`, `LIVE_PROFILE=full`, mode mutating, 22:20Z–22:28Z, against merged `main` `96279fd`): the broker chain leaves Keycloak for the Cognito `/oauth2/authorize` endpoint, brokered login issued an authorization code (the Cognito → Keycloak leg live), id_token claims correct — `preferred_username=oracle-build6-2220@federation-oracle.invalid`, groups ∋ `k8s-viewers`. Two caveats recorded with it: the evidence is from the POST-FIX oracle run (the earlier `build6-2042` run was fail=1 on a defect in the CHECK — it read only the first redirect hop, bead `kp-8vs`, fixed in this build's own commits), and build #6 is not a single-SHA build (SHA map in the build-#6 block). **Clean build #7 (2026-09-10, the same account emptied to nothing and rebuilt — see the build-#7 block) is the second, and it retires the not-a-single-SHA caveat on the platform half:** the realm imported the broker on a fresh Keycloak DB again, in a build whose probe, base apply, management apply and BOTH gate syncs all ran one `main` SHA (`3298e70f614d793f040ea4d6b97c4455cfe028b9`), and the federation oracle PASSED on it — sandbox RUN_ID `build7-0152`, `LIVE_PROFILE=full`, mutating, pass=28 skip=0 fail=1 (the single failure an unrelated CHECK defect, `kp-2al.27`): `username=kc:oracle-build7-0152@federation-oracle.invalid groups∋kc:k8s-viewers`. Two caveats ride build #7 in place of the retired one: the oracle suite ran the **branch** harness, not the platform's `3298e70` (live-verify ran ref `bf520ba353d4544339175076ea66dacbf49d2bcc`), so one SHA still does not cover both halves of the evidence; and the earlier run on this same build (`build7-0135`) failed the federation check's kubectl leg on a **timing window, not breakage** — an `ACTIVE` EKS identity-provider association does not immediately honour tokens: rejected ~01:43Z with the brokered login and the id_token claims passing at that same moment, accepted ~01:54Z, roughly 10–25 min after the build. | **DONE (2× clean build: #6, #7)** |
+| 11 | EKS clusters federate kubectl auth to Keycloak (REQ-AUTH-07/09/10) | BUILT 2026-07-06 (this branch): `IdentityProviderConfig` composed into the platform-cluster Composition (resource 16 — clientId `kubernetes`, `preferred_username`/`groups`, both prefixed `kc:`, issuer combined from the same env pair as the ACM cert + KC_HOSTNAME; external-name `keycloak`). Ships with its coverage-oracle entry, live check, claim-contract unit test, regenerated render golden, and CRD schema. The REQ-AUTH-10 federation oracle (`cognito-federation-live.sh`) drives the whole path headlessly with a self-reaped directory fixture user. | **Post-merge observed live 2026-07-06** on the build-#5 cluster: the XR gained the association by GitOps auto-sync and it reached ACTIVE — `eks-identity-provider-config-live` PASS, composite XR Ready=True (no wedge). That proves the EKS-side half live, but is NOT clean-build evidence: the realm broker (rows-10 half) only imports on a fresh Keycloak DB, so the composed-from-scratch + federation-oracle evidence still records on the next clean build. **Clean build #6 (2026-09-09) records it:** the IdentityProviderConfig `keycloak` on `k8-platform-services` was composed from scratch and reached ACTIVE with claims matching the `kc-*` binding contract (issuer `https://auth.platform.<domain>/realms/platform`), and federated kubectl PASSED on that build — `username=kc:oracle-build6-2220@federation-oracle.invalid groups∋kc:k8s-viewers` on `k8-platform-services` (RUN_ID `build6-2220`, mutating, against merged `main` `96279fd`). Same two caveats as row 10: post-fix oracle run, and build #6 is not a single-SHA build. **Clean build #7 (2026-09-10) records it a second time and retires the single-SHA caveat on the platform half:** `identityproviderconfig/platform-5183a6d2c254` (owner `XPlatformCluster/platform`) was composed from scratch in a build that ran one `main` SHA (`3298e70`) end to end and reached `Ready=True reason=Available` at **01:13:50Z**, with the composite Ready at **01:14:17Z** — both **before** gate 2 was synced at **01:20:40Z**, so the association neither waits on the spoke-access gate nor wedges the composite. Federated kubectl PASSED on `build7-0152`: `username=kc:oracle-build7-0152@federation-oracle.invalid groups∋kc:k8s-viewers` on `k8-platform-services`. Caveats as in row 10: the oracle suite ran the branch harness, not the platform's `3298e70` (live-verify ran ref `bf520ba`); and an `ACTIVE` association does not honour tokens immediately (the `build7-0135` kubectl leg was rejected ~01:43Z and accepted ~01:54Z — a warm-up window, not breakage). | **DONE (2× clean build: #6, #7)** |
 
 Clean build #1 also caught and durably fixed a NEW defect mid-build —
 **OI-2026-06-10-1** (ACM provider v2.5.0 leaves the Certificate external-name
@@ -362,6 +518,30 @@ run ID.
    counter (`kp-lc5`), the three structural hub-fixture skips (`kp-ug3`),
    and the merge-before-live-evidence circularity the one-time owner
    exception papered over.
+
+8. ~~Clean build #7: the class-then-PVC ordering + the documentation as the
+   only instruction set.~~ **DONE** — clean build #7 above (2026-09-10, the
+   same account emptied to nothing and rebuilt), executed by a **fenced
+   agent** that could read only
+   `docs/site/how-to/build-the-platform-from-nothing.md`. It earned: the
+   **storage ordering** build #6 could not establish (default gp3 class
+   6m57s old against PVCs at 6m50s/6m22s/6m17s — `kp-2al.19` closed), a
+   second recording for rows 10 and 11 with build #6's not-a-single-SHA
+   caveat retired on the platform half (one `main` SHA `3298e70` for probe,
+   both applies and both gate syncs), **zero structural skips** for the
+   first time (`kp-ug3`'s hub-targeting fix let the two AppProject guards
+   and the Crossplane RBAC scope guard execute at all), and live-verify
+   **34428165725** success at ref `bf520ba` with evidence artifact
+   **10133798389**. Still owed out of this build, carried as blockers
+   rather than buried: a **human** executing the page on a **fresh**
+   account (`kp-2al.10`, still open — the page keeps its `status: contract`
+   marker); the Argo CD **browser** sign-in (unverifiable from this
+   sandbox — Chromium has no egress; the credential was checked through the
+   `argocd` CLI instead); direct **ACM chain** validation from the sandbox
+   (the TLS-intercepting egress gateway stands in the way); the `kp-lc5`
+   expect-full gap, which these runs did not record either way and which
+   therefore stays `pending clean-build verification`; and the
+   merge-before-live-evidence circularity from build #6, untouched.
 
 A fix that cannot be validated this way stays `pending clean-build
 verification` and is carried as a **blocker**, not silently deferred into the
