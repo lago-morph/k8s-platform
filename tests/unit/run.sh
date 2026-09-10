@@ -194,6 +194,10 @@ run_suite tests/unit/test_beads_sync_shallow_bootstrap.sh
 # target revision, so it reads correct for a gate that never synced).
 run_suite tests/unit/test_gate_sync_confirmation.sh
 
+# kp-2al.22: the finished-platform inventory is the build oracle; its per-spoke
+# Application names must be the ones argocd/apps/spoke/ actually generates.
+run_suite tests/unit/test_finished_platform_inventory.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated

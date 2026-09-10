@@ -30,18 +30,33 @@ Applications in namespace `argocd`:
 | `spoke-access` | Synced/Healthy **after its deliberate sync** | Manual-sync gate — registers the spoke |
 | `workload1-cluster` | **OutOfSync, by design** | The second-cluster gate stays unpulled until fan-out is exercised |
 
-Per-spoke Applications (generated per registered spoke; for the
-platform services cluster, prefix `platform-`):
+Per-spoke Applications. Each `ApplicationSet` in `argocd/apps/spoke/`
+names its generated Application `<short-name>-<component>`, taking the
+prefix from the registered spoke's `k8-platform.io/short-name` label.
+The platform services cluster sets `shortName: spoke`
+(`clusters/platform/spoke-access/spoke-access.yaml`), so its Applications
+are the `spoke-*` names below — a second registered spoke gets the same
+list under its own prefix:
 
 | Application | Expected state | Notes |
 |---|---|---|
-| `platform-ingress-nginx` | Synced/Healthy | Ingress + the TLS-terminating load balancer |
-| `platform-external-dns` | Synced/Healthy | DNS records for Ingress hosts |
-| `platform-eso` | Synced/Healthy | Secret sync (ClusterSecretStore `aws-secrets-manager`) |
-| `platform-hello` | Synced/Healthy | The built-in demo app — the behavioral gate's target |
-| `platform-keycloak` | Synced/Healthy | SSO components (logins land with the identity phase) |
-| observability set (kube-prometheus-stack, loki, alloy) | Synced/Healthy | The spoke-storage gap closed on clean build #6 (2026-09-09): with the EBS CSI addon and the default `gp3` StorageClass in place, all 3 monitoring PVCs Bound and both previously non-green Applications reached Healthy |
-| storage (the default `gp3` StorageClass) | Synced/Healthy | Added by build #6; the Kubernetes half of spoke storage — the `aws-ebs-csi-driver` addon and its IRSA role are composed, not delivered here |
+| `spoke-ingress-nginx` | Synced/Healthy | Ingress + the TLS-terminating load balancer |
+| `spoke-external-dns` | Synced/Healthy | DNS records for Ingress hosts |
+| `spoke-eso` | Synced/Healthy | Secret sync (ClusterSecretStore `aws-secrets-manager`) |
+| `spoke-hello` | Synced/Healthy | The built-in demo app — the behavioral gate's target |
+| `spoke-keycloak` | Synced/Healthy | SSO components (logins land with the identity phase) |
+| `spoke-observability-kube-prometheus-stack` | Synced/Healthy | The spoke-storage gap closed on clean build #6 (2026-09-09): with the EBS CSI addon and the default `gp3` StorageClass in place, all 3 monitoring PVCs Bound and both previously non-green Applications reached Healthy |
+| `spoke-observability-loki` | Synced/Healthy | Log store; the other half of the build-#6 storage fix |
+| `spoke-storage` | Synced/Healthy | Added by build #6; the Kubernetes half of spoke storage (the default `gp3` StorageClass) — the `aws-ebs-csi-driver` addon and its IRSA role are composed, not delivered here |
+
+One Application in that directory is **not** per-spoke and does not take
+the prefix: `hub-observability-alloy` is generated per registered spoke
+but deployed to the **hub**, in project `hub-addons`, which is why its
+name is a literal:
+
+| Application | Expected state | Notes |
+|---|---|---|
+| `hub-observability-alloy` | Synced/Healthy | Hub-side collection agent for the spoke's telemetry |
 
 ## Infrastructure layer (composite resources)
 
