@@ -263,4 +263,29 @@ else
   _fail "state backend naming matches" "terraform-test: [$tt]  opsbox: [$ob]"
 fi
 
+# ---------------------------------------------------------------------------
+# The ops box must not pick an Availability Zone blindly
+# ---------------------------------------------------------------------------
+# The first real apply failed with:
+#   "Your requested instance type (t3.small) is not supported in your requested
+#    Availability Zone (us-east-1e)"
+# The default VPC has a subnet in EVERY AZ, including ones that offer no t3 at
+# all, so choosing `sort(data.aws_subnets.default.ids)[0]` is a coin flip that
+# lands on a dead AZ. The module must ask which AZs actually offer the type.
+echo "── the ops box picks an AZ that offers its instance type ──"
+TF=terraform/opsbox/main.tf
+if grep -q 'aws_ec2_instance_type_offerings' "$TF"; then
+  _pass "module consults instance-type offerings"
+else
+  _fail "module consults instance-type offerings" \
+    "$TF picks a subnet without checking which AZs offer var.instance_type"
+fi
+
+if grep -qE 'subnet_id[[:space:]]*=[[:space:]]*sort\(data\.aws_subnets' "$TF"; then
+  _fail "module does not pick a subnet blindly" \
+    "subnet_id is back to an unfiltered pick from data.aws_subnets.default"
+else
+  _pass "module does not pick a subnet blindly"
+fi
+
 assert_summary

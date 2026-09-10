@@ -36,10 +36,37 @@ data "aws_subnets" "default" {
   }
 }
 
+# Not every AZ offers every instance type, and the default VPC has a subnet in
+# ALL of them. Picking a subnet blindly put the first ops box in us-east-1e,
+# where t3.small is not offered at all, and RunInstances refused it outright:
+#   "Your requested instance type (t3.small) is not supported in your requested
+#    Availability Zone (us-east-1e)"
+# So ask which AZs actually offer this type, and only consider subnets there.
+data "aws_ec2_instance_type_offerings" "opsbox" {
+  filter {
+    name   = "instance-type"
+    values = [var.instance_type]
+  }
+  location_type = "availability-zone"
+}
+
+data "aws_subnet" "default" {
+  for_each = toset(data.aws_subnets.default.ids)
+  id       = each.value
+}
+
 # Amazon Linux 2023, resolved from the public SSM parameter so no AMI id is
 # ever committed (they are region-specific and rotate).
 data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
+}
+
+locals {
+  # Default-VPC subnets that sit in an AZ where this instance type is offered.
+  usable_subnet_ids = sort([
+    for s in data.aws_subnet.default : s.id
+    if contains(data.aws_ec2_instance_type_offerings.opsbox.locations, s.availability_zone)
+  ])
 }
 
 # ---------------------------------------------------------------------------
@@ -190,7 +217,7 @@ resource "aws_security_group" "opsbox" {
 resource "aws_instance" "opsbox" {
   ami                    = data.aws_ssm_parameter.al2023.value
   instance_type          = var.instance_type
-  subnet_id              = sort(data.aws_subnets.default.ids)[0]
+  subnet_id              = local.usable_subnet_ids[0]
   iam_instance_profile   = aws_iam_instance_profile.opsbox.name
   vpc_security_group_ids = [aws_security_group.opsbox.id]
 
@@ -214,6 +241,15 @@ resource "aws_instance" "opsbox" {
     repo_url = var.repo_url
     repo_ref = var.repo_ref
   })
+
+  # A clear failure rather than an index-out-of-range if the account offers
+  # this type in no AZ at all.
+  lifecycle {
+    precondition {
+      condition     = length(local.usable_subnet_ids) > 0
+      error_message = "No default-VPC subnet sits in an AZ that offers ${var.instance_type}. Pick a different instance_type."
+    }
+  }
 
   tags = { Name = local.name }
 }
