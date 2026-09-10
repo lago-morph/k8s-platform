@@ -13,18 +13,20 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
 | Fact | Value | Evidence |
 |---|---|---|
-| `main` | `3298e70f614d793f040ea4d6b97c4455cfe028b9` (the SHA build #7 was built from) | `git log` |
+| `main` | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` (PR #269, ADR-0018) — the SHA build #8 is being built from | `git log` |
 | Clean builds proven | seven (#1–#7); rows 1–9 evidenced 4×–6× | `SUBSTRATE-READINESS.md` |
 | Rows 10/11 | DONE on clean builds #6 and #7 (federation + federated kubectl; RUN_IDs `build6-2220`, `build7-0152`); build #6's not-a-single-SHA caveat retired by #7 on the platform half | `SUBSTRATE-READINESS.md` |
-| AWS account | same rotated Pluralsight sandbox, torn down to nothing and rebuilt by build #7 | creds probe 34421037502, `scripts/whereami.sh` |
-| GHA secrets | valid for that account | creds probe 34421037502 (creds 3/3, zone 4/4; state-backend 2/2 because the teardown left the backend behind) |
+| AWS account | ROTATED to `439891535995`, us-east-1 — a genuinely NEW account, not a reset one: no state bucket, no lock table, no resources | creds probe 34506884919, `scripts/whereami.sh` |
+| GHA secrets | valid for the new account | creds probe 34506884919 (creds 3/3 naming `439891535995`, zone 4/4 `439891535995.realhandsonlabs.net.`, state-backend 0/2 — the RED that is the documented pass signal on a fresh account) |
+| Owner ruling 2026-09-10 | this account is spendable: the owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so build #8 does not consume what that bead measures. Leave this one cleaned up | owner, this session |
 | CI dispatch from the sandbox | native GitHub MCP `actions_run_trigger` + `get_job_logs` work | runs 34421097160 / 34421376617 / 34428165725 |
 | Jentic bridge | still works; hosted execution ends 2026-09-20; only needed for `.github/workflows/**` writes | `mcp__Jentic__list_credentials` deprecation notice |
 | Sandbox git push | branch create + force-with-lease OK; non-branch refs and branch deletes HTTP 403 | probes 2026-09-08 (`ai/environment.md` §2) |
 | Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion (bead `kp-2al.31`) | — |
 | Latest evidence on the branch | live-verify success at PR #267's head `5ac400c`, and the fail-closed live-evidence gate green at the same SHA | 34430738213, 34432226978 |
 | PR #267 | open, mergeable, unit tests green — carries build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | `gh` PR view |
-| Account after this session | expected to ROTATE. The build #7 platform was still standing when the session ended; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Assume nothing until `scripts/whereami.sh` says otherwise | — |
+| PR #270 | open — step 3 Phase A: `kp-du3`, `kp-2al.28` (static half), `kp-2al.24`, `kp-2al.22`, the teardown runbook (`kp-2al.30`) and the database scenario-ready check (`kp-2al.16`). Touches no live-evidence-gated path | PR #270 |
+| Account after this session | expected to ROTATE. Assume nothing until `scripts/whereami.sh` says otherwise; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) | — |
 
 ## Environment state
 
