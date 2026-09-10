@@ -21,6 +21,9 @@ In the order a new tenant tends to need them:
 - [Build the platform from a workstation](build-the-platform-on-a-workstation.md)
   — the copy/paste Terraform alternative; published, but never executed
   by a person and therefore unverified
+- [Tear the platform down to nothing](tear-the-platform-down.md) — the
+  mirror of the bring-up: the ordered teardown that does not strand
+  paid resources, and how to leave an account equivalent-to-fresh
 - [Get admin access and platform facts](admin-access.md) — the
   administrator's guide: kubeconfigs for both clusters, the Argo CD
   URL and password, and where the platform's discovered values live

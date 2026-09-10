@@ -91,6 +91,7 @@ nav:
       - how-to/index.md
       - Build the platform from nothing: how-to/build-the-platform-from-nothing.md
       - Build from a workstation (unverified): how-to/build-the-platform-on-a-workstation.md
+      - Tear the platform down: how-to/tear-the-platform-down.md
       - Get admin access and platform facts: how-to/admin-access.md
       - Onboard a tenant: how-to/onboard-a-tenant.md
       - Deploy an application: how-to/deploy-an-application.md

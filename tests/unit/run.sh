@@ -198,6 +198,11 @@ run_suite tests/unit/test_gate_sync_confirmation.sh
 # Application names must be the ones argocd/apps/spoke/ actually generates.
 run_suite tests/unit/test_finished_platform_inventory.sh
 
+# kp-2al.16: the database ticket runbook is what a step-5 scenario automates
+# from — its manifests must still match the XRD, the Keycloak precedent, and
+# each other (admin push and tenant pull must address one ASM key).
+run_suite tests/unit/test_database_request_runbook.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated

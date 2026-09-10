@@ -830,6 +830,20 @@ imperative by necessity:
 | `platform-cluster-claim` sync | Synchronizing it provisions a real EKS cluster; auto-sync would mean a typo fix starts a cluster |
 | `spoke-access` sync | It grants real AWS access and must observe the cluster's published facts, so auto-sync would race the provision |
 
+## When you are done with this account
+
+Taking it back to nothing is its own ordered procedure, and doing it in
+the wrong order strands paid resources — an orphaned load balancer keeps
+the ACM certificate in use, and the certificate's managed resource then
+wedges. See
+[Tear the platform down to nothing](tear-the-platform-down.md).
+
+Note especially that a torn-down account is **not** the same as a fresh
+one: the Terraform state bucket and the DynamoDB lock table are
+bootstrapped outside Terraform and survive. If you intend to run *this*
+page again on the same account, delete them first, or the credential
+probe in step 1 will come out green where this page predicts red.
+
 ---
 
 *Tracking: bead `kp-2al.10` (the human-executed bring-up this page is
