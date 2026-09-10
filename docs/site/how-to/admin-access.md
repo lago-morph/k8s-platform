@@ -319,6 +319,79 @@ blank certificate ARN.
 
 ---
 
+## 4. Create a directory account for an end user
+
+The end-user path this platform documents — sign in with a directory
+account, land in a Kubernetes group, use `kubectl` through OIDC — needs an
+account to exist. **Nothing in a build creates one.** The federation
+oracle creates an ephemeral fixture user, proves the whole chain with it,
+and its reaper deletes it again, so a person following
+[kubectl via directory group](kubectl-access-via-directory-group.md)
+after a fresh build has nothing to sign in with until an admin creates it.
+
+That page tells the user to "ask the platform operator". This is the
+operator doing it. Creating end-user accounts is an **admin action on
+request**, not self-service; a self-service onboarding flow is a v2.0
+item.
+
+First find the user pool. It is not hardcoded anywhere — read it from the
+Cognito bridge document the base build writes to Secrets Manager:
+
+```bash
+POOL_ID=$(aws secretsmanager get-secret-value \
+  --secret-id k8-platform/base/cognito \
+  --query SecretString --output text \
+  | jq -r '.issuer_url' | awk -F/ '{print $NF}')
+echo "$POOL_ID"
+```
+
+Then create the account and put it in a group. The groups are
+`k8s-admins` and `k8s-viewers`; pick the lower one unless the person
+needs to change things:
+
+```bash
+EMAIL="person@example.com"
+GROUP="k8s-viewers"          # or k8s-admins
+
+aws cognito-idp admin-create-user \
+  --user-pool-id "$POOL_ID" --username "$EMAIL" \
+  --message-action SUPPRESS \
+  --user-attributes Name=email,Value="$EMAIL" Name=email_verified,Value=true \
+                    Name=given_name,Value=First Name=family_name,Value=Last
+
+aws cognito-idp admin-set-user-password \
+  --user-pool-id "$POOL_ID" --username "$EMAIL" \
+  --password '<a strong initial password>' --permanent
+
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id "$POOL_ID" --username "$EMAIL" --group-name "$GROUP"
+```
+
+**How you know it worked:**
+
+```bash
+aws cognito-idp admin-list-groups-for-user \
+  --user-pool-id "$POOL_ID" --username "$EMAIL" \
+  --query 'Groups[].GroupName' --output text
+```
+
+Then hand the person their email, the initial password, and the
+[kubectl via directory group](kubectl-access-via-directory-group.md) page.
+
+!!! warning "What is attested here, and what is not"
+    These four commands are the ones
+    `tests/live/checks/instantiate/cognito-federation-live.sh` runs on
+    every build with `LIVE_PROFILE=full`, against the same pool and the
+    same groups, and the full chain — Cognito account → Keycloak broker →
+    federated `kubectl` — passed on clean builds #6 and #7. What is *not*
+    attested is this page's exact wording being executed by a person, and
+    `--permanent` means the user is never prompted to change the password
+    you set. Treat the initial password as one you will rotate.
+
+    `admin-set-user-password` puts a password on your command line and
+    therefore in your shell history. Set it from a variable you unset, or
+    from a password manager.
+
 ## Gaps this page names
 
 | Gap | Consequence |
@@ -328,6 +401,8 @@ blank certificate ARN.
 | No AWS-IAM admin access entry for a named human on the spoke | Spoke admin is only reachable through the directory group, or through the hub's Argo CD role |
 | Hub admin belongs to whichever identity applied the Terraform | If CI built the platform with other credentials, your own may not be an admin there |
 | Argo CD has no SSO | The shared local `admin` account is the only login |
+| Argo CD browser sign-in has never been exercised | Every attestation is via the `argocd` CLI or `kubectl`; the browser experience is unverified (`kp-2al.29`) |
+| No build creates a durable directory account | Section 4 is the admin doing it by hand on request; a composed or self-service account is a v2.0 item (`kp-2al.29`) |
 | No documented Argo CD password rotation | The credential changes only when Terraform regenerates it |
 | The Argo CD URL's certificate is not verified by the build | "Reachable" is attested; "valid public certificate" is not |
 | Facts are readable only by a hub admin | No read-only surface for anyone else |
