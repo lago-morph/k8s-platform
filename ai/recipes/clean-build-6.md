@@ -107,27 +107,60 @@ initial-admin Secret. The sync form below needs only kubectl; the
    ```
    **GAP:** the committed instances of this patch use `"main"`/`"HEAD"`;
    putting the SHA in `revision` is the documented Argo CD operation
-   field, applied by inference from the "sync by SHA" rule. Verify after
-   the sync that `.status.sync.revision` equals the SHA; if it does not,
-   stop and record.
-3. Wait on the published facts, NOT XR Ready (XR Ready before gate 2
-   deadlocks a fresh build — the IdP association needs Keycloak, which
-   needs gate 2):
+   field, applied by inference from the "sync by SHA" rule.
+   **CORRECTION 2026-09-10 (build #7):** verifying `.status.sync.revision`
+   equals the SHA — what build #6 did — is **not proof the gate synced**.
+   Argo populates that field from the target revision it has observed in
+   the repository, not from a completed operation: on build #7
+   `spoke-access` already reported the right SHA there while still
+   `OutOfSync`, with no sync in its history. Read the operation instead:
+   `.status.operationState.phase` must be `Succeeded` and
+   `.status.operationState.syncResult.revision` must equal the SHA
+   (optionally also `.status.sync.status` == `Synced`). If not, stop and
+   record.
+3. Wait on the published facts, NOT XR Ready — the facts plus a Ready
+   node group are what gate 2 consumes:
    ```sh
    for fact in oidcIssuer endpoint clusterCaData certificateArn; do
      kubectl wait --for=jsonpath="{.status.${fact}}" --timeout=1500s xplatformclusters -A --all
    done
    kubectl wait --for=condition=Ready --timeout=1500s nodegroups.eks.aws.m.upbound.io -A --all
    ```
-   Expect 15–20 min. Diagnose with `scripts/crossplane-trace.sh <kind>/<name> [-n ns] --watch`
+   Expect 15–25 min (15 on build #6, ~24 on build #7); past ~35 min with no
+   change, trace it. Diagnose with `scripts/crossplane-trace.sh <kind>/<name> [-n ns] --watch`
    (read-only; exit 0 on Ready, 2 on timeout) or the `crossplane-claim-verify` skill.
+
+   **CORRECTION 2026-09-10 (build #7):** this recipe previously said "XR
+   Ready before gate 2 deadlocks a fresh build — the IdP association needs
+   Keycloak, which needs gate 2", and that belief is what drove build #6
+   this way. **Build #7 contradicts it.** Measured from nothing on an
+   emptied account: `identityproviderconfig/platform-5183a6d2c254` (owned
+   by `XPlatformCluster/platform`) `Ready=True reason=Available` at
+   2026-09-10T01:13:50Z and `xplatformcluster/platform` `Ready=True` at
+   01:14:17Z, while gate 2 (`spoke-access`) was not synced until
+   01:20:40Z — i.e. the association succeeded and the XR went Ready about
+   six minutes BEFORE gate 2 ran and before Keycloak existed. No deadlock,
+   no retry loop. Waiting on the facts is still the right instruction
+   (they are gate 2's input), but do not depend on either ordering of XR
+   Ready versus gate 2, and do not describe a wait here as a deadlock.
 
 ### (e) gate 2 — `spoke-access`
 
-Sync the same way (explicit SHA). Then wait for the XR Ready LAST:
-`kubectl wait --for=condition=Ready --timeout=2400s xplatformclusters -A --all`.
-On a fresh build the association fail-retries until Keycloak's issuer
-serves — a known property, not a defect.
+Sync the same way (explicit SHA, and confirm via `operationState` as in (d)).
+Then wait for the XR Ready:
+`kubectl wait --for=condition=Ready --timeout=2400s xplatformclusters -A --all`
+— it may already be satisfied, as on build #7.
+
+**CORRECTION 2026-09-10 (build #7):** this step previously said "on a fresh
+build the association fail-retries until Keycloak's issuer serves — a known
+property, not a defect". No such retry loop occurred on build #7; the
+association went `Available` before Keycloak existed (see (d)). What IS
+real, and bit build #7's oracle, is an authentication lag AFTER the
+association is ACTIVE: the federated-`kubectl` leg was still rejected at
+~01:43Z and passed at ~01:54Z against an association ACTIVE since
+01:13:50Z (the brokered login and `id_token` claims passed throughout). So
+expect roughly 10–25 min after the build before EKS honours tokens from
+the issuer; retry, never re-sync or re-create.
 
 "Registration Secret complete" (ADR-0010, asserted by
 `tests/live/checks/after/spoke-cluster-secret-live.sh`): on the hub, ns
@@ -234,7 +267,10 @@ type a run ID; paste it (L39).
 4. Kubeconfig truncate race (L34) fixed in #245; prior greens were timing luck.
 5. ExternalSecret CRD-default enums must be pinned or ArgoCD loops OutOfSync forever (L40).
 6. Exact-HEAD gates: content → dispatch → docs-only run-ID commit; never fabricate a run ID (L39).
-7. XR-Ready-before-spoke-access deadlock — see (d).
+7. ~~XR-Ready-before-spoke-access deadlock~~ — **not real; disproven by build
+   #7 on 2026-09-10, see the correction in (d).** Wait on the four published
+   facts because gate 2 consumes them, not to avoid a deadlock. The real
+   lag is federated `kubectl` after the association is ACTIVE — see (e).
 8. Bootstrap-time Applications must not target namespaces created by manual gates (L35).
 9. AWS tag charset (L36): `scripts/pre-chainsaw-audit.sh` catches it statically.
 10. upjet ASM observe needs `secretsmanager:GetResourcePolicy` or the MR wedges Synced=False.
@@ -250,7 +286,7 @@ type a run ID; paste it (L39).
 2. A red gate: fix code or check; never re-kick, merge around, or de-gate (ADR-0009).
 3. A new live defect: red-first test at the closest layer, fix in code, merge, let GitOps propagate; if it cannot land this session it is a bug, not a hand-fix.
 4. Any undiagnosed failure at session end.
-5. A wait past its budget (cluster >20 min, XR Ready >21 min + stack rollout, discovery >600 s): trace, do not sync more or delete.
+5. A wait past its budget (cluster >35 min — widened 2026-09-10 after build #7 took ~24; XR Ready >21 min + stack rollout, discovery >600 s): trace, do not sync more or delete.
 6. Account death before the oracles: no rows.
 7. Account-mutex lease unavailable or lost.
 8. Any of the three GAPs above (explicit-SHA payload, per-check invocation, RUN_ID format): ask, do not invent.

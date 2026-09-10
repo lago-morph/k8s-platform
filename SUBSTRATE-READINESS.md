@@ -76,10 +76,17 @@ both 254 = the documented expected signature before bootstrap) → base
 management re-apply **34410469157** (branch @ `4364d4a`, success
 22:06Z–22:07Z; the widened verifier/reaper policy) → gate 1
 `platform-cluster-claim` synced by `kubectl patch` at the explicit SHA
-`bc1cbb6`, `.status.sync.revision` confirmed equal to it: XPlatformCluster
+`bc1cbb6`, `.status.sync.revision` observed equal to it afterwards — which
+establishes that the Application's target revision was that SHA, **not**
+that a sync operation completed at it (Argo sets that field from the target
+revision it has observed, so it can already hold the right SHA before any
+sync; the stronger `.status.operationState` check that would have proved a
+completed sync at that SHA was not performed on this build — kp-2al.24,
+found 2026-09-10): XPlatformCluster
 `platform/platform` published `oidcIssuer`, `endpoint`, `clusterCaData` and
 `certificateArn`, nodegroup `platform-78032583fa77` reached Ready, **15 min**
-from sync → gate 2 `spoke-access`, same explicit SHA, revision confirmed:
+from sync → gate 2 `spoke-access`, same explicit SHA, `.status.sync.revision`
+observed equal to it with the same caveat:
 registration Secret `platform-spoke` appeared in hub namespace `argocd`
 **within the first 30-second check**, carrying the full ADR-0010 contract
 (all the `k8-platform.io/*` annotations; `config` decoding to
