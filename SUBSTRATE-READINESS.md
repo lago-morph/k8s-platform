@@ -176,11 +176,14 @@ evidence:**
   endpoints was the gateway's certificate. The public certificate is good
   transitively, but the **ACM chain was not directly verified from the
   sandbox** on this build.
-- **The `kp-lc5` expect-full gap is not settled by this build.** Only
-  pass/skip/fail counts were recorded for the two oracle runs; no suite
-  exit code or `expect-full-violations` figure was captured, so that gap
-  is neither shown closed nor shown to have recurred — it stays
-  `pending clean-build verification`.
+- **The `kp-lc5` counter gap is settled by this build.** Both oracle runs
+  printed the full summary line, and the counter agreed with the printed
+  block on each: `build7-0135` read
+  `pass=27 skip=0 fail=2 expect-full-violations=0 checks=29` and
+  `build7-0152` read
+  `pass=28 skip=0 fail=1 expect-full-violations=0 checks=29`, with no
+  violation block printed on either — where build #6 read
+  `expect-full-violations=0` while printing four violations and exiting 3.
 - **The dry run produced nine documentation findings** (`kp-2al.23`
   through `kp-2al.26`), three of them serious — including that the page's
   **most emphatic warning was false**. The corrections are committed in
