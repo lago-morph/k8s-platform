@@ -9,11 +9,54 @@ shortest time — is in the epic: `bd show kp-2al`.** Keep this file short:
 replace stale facts, never append narrative. The pre-2026-09-08 handoff
 is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
+## Ops box (`kp-2al.34`) — state at 2026-09-11
+
+Owner direction: the documented bring-up is too complex to execute by
+hand, so the ops box IS to become the documented procedure. Clicking the
+two "Run workflow" buttons stays; the interpreting goes. The bead carries
+the full scope and the credential-separation constraint that shapes it.
+
+**Committed and pushed** (branch `claude/trusting-ride-0cpoav`, head `bee5322`):
+
+| Piece | Path | State |
+|---|---|---|
+| Terraform module | `terraform/opsbox/` | applies cleanly against a live account; AZ-aware subnet selection proven |
+| Bring-up scripts | `scripts/opsbox/{lib.sh,k8p-status.sh,k8p-bringup.sh,refresh.sh}` | written, unit-tested, **never run against a live platform** |
+| Unit tests | `tests/unit/test_opsbox_bringup.sh` | 33 assertions, green |
+| Workflow | `.github/workflows/opsbox.yml` | on `main` (PR #270) plus the `cloud-init` fix on this branch (`bee5322`, written through jentic — the `workflow`-scope gap, `ai/environment.md` §2) |
+
+**Two real bugs the live runs found**, both fixed, neither yet proven by a
+passing `apply`:
+
+| Bug | Symptom | Fix |
+|---|---|---|
+| Blind subnet pick | `RunInstances` refused — `t3.small` is not offered in `us-east-1e`, and the default VPC has a subnet in every AZ | `aws_ec2_instance_type_offerings` narrows subnets to AZs offering the type, plus a `lifecycle` precondition (`49ba71d`) |
+| Self-test raced the bootstrap | `BOOTSTRAP-INCOMPLETE` on run 34537395770: the SSM agent registered 19 s after boot while `user_data` was still on `dnf install`. The agent comes up long BEFORE `user_data` finishes — the two run in parallel | prepend `cloud-init status --wait` to the SSM command (`bee5322`) |
+
+**What a fresh session picks up**, in order:
+
+1. **Dispatch `Ops box` → `apply` on a live account and read the
+   self-test.** It has never passed. Until it does, nothing about the
+   scripts' live behaviour is verified — they have never seen a cluster.
+   The `apply` action also bootstraps the state backend, so running it on
+   a fresh account is what makes the credential probe's state-backend
+   checks flip from red to green.
+2. **Rewrite `docs/site/how-to/build-the-platform-from-nothing.md`** so
+   the ops-box procedure IS the documented one. Scope item 3 of the bead
+   and the owner's explicit correction; **not started**.
+3. Close `kp-2al.34` with the evidence once both are done.
+
+**Account**: the account used for the two ops-box runs EXPIRED
+mid-session. Nothing in it survives, its ops-box terraform state is
+meaningless, and no cleanup is owed on it. Assume every phase `not
+applied` and re-verify with `scripts/whereami.sh`; a new account means new
+GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`).
+
 ## Verified 2026-09-10
 
 | Fact | Value | Evidence |
 |---|---|---|
-| `main` | `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` (PR #269, ADR-0018) — the SHA build #8 is being built from | `git log` |
+| `main` | `707487818279784e22a924175a1e13ebd7194340` (PR #270). Build #8 was built from `65778961ee4ea25fd8681b4177f1e4dca06d9ac4` (PR #269, ADR-0018) | `git log` |
 | Clean builds proven | seven (#1–#7); rows 1–9 evidenced 4×–6× | `SUBSTRATE-READINESS.md` |
 | Rows 10/11 | DONE on clean builds #6 and #7 (federation + federated kubectl; RUN_IDs `build6-2220`, `build7-0152`); build #6's not-a-single-SHA caveat retired by #7 on the platform half | `SUBSTRATE-READINESS.md` |
 | AWS account | ROTATED to `439891535995`, us-east-1 — a genuinely NEW account, not a reset one: no state bucket, no lock table, no resources | creds probe 34506884919, `scripts/whereami.sh` | <!-- noqa: account-id - run provenance, account rotates -->
@@ -24,8 +67,8 @@ is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 | Sandbox git push | branch create + force-with-lease OK; non-branch refs and branch deletes HTTP 403 | probes 2026-09-08 (`ai/environment.md` §2) |
 | Leftover | branch `probe-delete-me-ref-test` on origin awaits owner deletion (bead `kp-2al.31`) | — |
 | Latest evidence on the branch | live-verify success at PR #267's head `5ac400c`, and the fail-closed live-evidence gate green at the same SHA | 34430738213, 34432226978 |
-| PR #267 | open, mergeable, unit tests green — carries build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | `gh` PR view |
-| PR #270 | open — step 3 Phase A: `kp-du3`, `kp-2al.28` (static half), `kp-2al.24`, `kp-2al.22`, the teardown runbook (`kp-2al.30`) and the database scenario-ready check (`kp-2al.16`). Touches no live-evidence-gated path | PR #270 |
+| PR #267 | MERGED 2026-09-10 15:01Z — build #7's evidence, the teardown fixes, the harness fixes and the corrected bring-up page | PR #267 |
+| PR #270 | MERGED 2026-09-10 22:17Z — step 3 Phase A: `kp-du3`, `kp-2al.28` (static half), `kp-2al.24`, `kp-2al.22`, the teardown runbook (`kp-2al.30`) and the database scenario-ready check (`kp-2al.16`). Touches no live-evidence-gated path | PR #270 |
 | Account at the end of this session | `439891535995` was built (#8) and torn back down to nothing, state backend included — verified empty by the operator. The owner will create a BRAND-NEW account for the human bring-up (`kp-2al.10`), so this one is spent, not reserved | teardown block below | <!-- noqa: account-id - run provenance, account rotates -->
 | Account after this session | expected to ROTATE. Assume nothing until `scripts/whereami.sh` says otherwise; a new account means new GHA secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) | — |
 

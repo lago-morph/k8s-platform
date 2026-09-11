@@ -150,6 +150,11 @@ jobs:
       # installed the toolchain, that the SSM agent registered (so the console
       # browser shell will work), and that the script's AWS read paths behave.
       #
+      # The first command is `cloud-init status --wait`: the SSM agent registers
+      # within seconds of boot, long before user_data has finished installing the
+      # toolchain, so without it the self-test races the bootstrap and reports
+      # BOOTSTRAP-INCOMPLETE against a box that was merely still working.
+      #
       # k8p-status.sh exits non-zero until every stage is green, which is the
       # CORRECT answer on an empty account — so this step reports the output
       # and does not fail the run on it. Read the lines, not the colour.
@@ -161,7 +166,7 @@ jobs:
           ID="$(terraform output -raw instance_id)"
           echo "instance: $ID"
 
-          echo "waiting for the SSM agent to register (user_data installs the toolchain first)"
+          echo "waiting for the SSM agent to register (it comes up BEFORE user_data finishes)"
           for i in $(seq 1 40); do
             ONLINE="$(aws ssm describe-instance-information               --filters "Key=InstanceIds,Values=$ID"               --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
             [ "$ONLINE" = "Online" ] && break
@@ -170,7 +175,7 @@ jobs:
           [ "$ONLINE" = "Online" ] || { echo "SSM agent never came Online — the browser shell will not work"; exit 1; }
           echo "SSM agent Online"
 
-          CMD="$(aws ssm send-command --instance-ids "$ID"             --document-name AWS-RunShellScript             --comment "opsbox self-test"             --parameters 'commands=["test -f /var/lib/opsbox-ready || { echo BOOTSTRAP-INCOMPLETE; tail -40 /var/log/opsbox-bootstrap.log; exit 1; }","cd /opt/k8-platform && git rev-parse --short HEAD","for t in aws kubectl jq yq helm; do echo $t $(command -v $t || echo MISSING); done","NO_COLOR=1 /opt/k8-platform/scripts/opsbox/k8p-status.sh || true"]' \
+          CMD="$(aws ssm send-command --instance-ids "$ID"             --document-name AWS-RunShellScript             --comment "opsbox self-test"             --parameters 'commands=["cloud-init status --wait >/dev/null 2>&1 || true","test -f /var/lib/opsbox-ready || { echo BOOTSTRAP-INCOMPLETE; tail -40 /var/log/opsbox-bootstrap.log; exit 1; }","cd /opt/k8-platform && git rev-parse --short HEAD","for t in aws kubectl jq yq helm; do echo $t $(command -v $t || echo MISSING); done","NO_COLOR=1 /opt/k8-platform/scripts/opsbox/k8p-status.sh || true"]' \
             --query 'Command.CommandId' --output text)"
 
           aws ssm wait command-executed --command-id "$CMD" --instance-id "$ID" 2>/dev/null || true
