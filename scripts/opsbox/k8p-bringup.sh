@@ -25,6 +25,7 @@ DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 WORKFLOW_UI="https://github.com/lago-morph/k8s-platform/actions/workflows/terraform-test.yml"
+LIVE_VERIFY_UI="https://github.com/lago-morph/k8s-platform/actions/workflows/live-verify.yml"
 
 # Budgets come from measured builds, not from hope. See
 # docs/site/how-to/build-the-platform-from-nothing.md.
@@ -188,6 +189,16 @@ else
 fi
 
 printf '\n%s  BRING-UP COMPLETE%s\n\n' "$C_BOLD$C_GREEN" "$C_OFF"
-info "Full status any time:      k8p-status.sh"
-info "The platform's own oracle: see docs/site/how-to/build-the-platform-from-nothing.md"
-printf '\n'
+info "Full status any time: k8p-status.sh"
+
+# The final word is not this script's. It belongs to tests/live/checks/**, the
+# behavioural oracle the Live verify workflow runs from CI under a scoped role;
+# these scripts are deliberately not a third opinion about whether the
+# platform works. The box cannot read that run (no GitHub token, by design),
+# so the operator dispatches it and reads its conclusion.
+say_do "For the platform's own verdict, run its behavioural suite:" \
+       "Open:  $LIVE_VERIFY_UI" \
+       "Click: Run workflow   (branch main, profile full)" \
+       "" \
+       "Its conclusion IS the verdict: green means every declared kind was" \
+       "verified against this account; an all-skipped run counts as red."
