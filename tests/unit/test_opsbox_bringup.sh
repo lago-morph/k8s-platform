@@ -30,12 +30,16 @@ svc="${1:-}"; op="${2:-}"
 case "$svc $op" in
   "sts get-caller-identity") printf '%s\n' "${MOCK_ACCOUNT:-123456789012}" ;;
   "route53 list-hosted-zones") printf '%s\n' "${MOCK_ZONE:-example.com.}" ;;
+  "route53 list-resource-record-sets") printf '%s\t%s\n' "${MOCK_R53_ALIAS:-lb-1234.elb.example.amazonaws.com.}" "${MOCK_R53_PLAIN:-None}" ;;
   "acm list-certificates") printf '%s\n' "${MOCK_ACM_STATUS:-ISSUED}" ;;
   "cognito-idp list-user-pools") printf '%s\n' "${MOCK_POOL_COUNT:-1}" ;;
   "eks describe-cluster") printf '%s\n' "${MOCK_CLUSTER_STATUS:-ACTIVE}" ;;
   "eks list-nodegroups") printf '%s\n' "${MOCK_NODEGROUP:-ng-1}" ;;
   "eks describe-nodegroup") printf '%s\n' "${MOCK_NODEGROUP_STATUS:-ACTIVE}" ;;
   "eks update-kubeconfig") exit "${MOCK_KUBECONFIG_RC:-0}" ;;
+  "s3api list-objects-v2") printf '%s\n' "${MOCK_STATE_OBJECTS:-1}" ;;
+  "dynamodb get-item") [ "${MOCK_STATE_LOCK_RC:-0}" -eq 0 ] || exit "$MOCK_STATE_LOCK_RC"
+                        printf '%s\n' "${MOCK_STATE_LOCK:-None}" ;;
   "eks describe-access-entry"|"eks create-access-entry"|"eks associate-access-policy") exit 0 ;;
   *) exit 0 ;;
 esac
@@ -61,10 +65,18 @@ SHIM
 
 cat > "$MOCK_DIR/curl" <<'SHIM'
 #!/usr/bin/env bash
+# The check must pin the connection to the Route53 target, never trust the
+# local resolver (negative-cache class, build #9). Record whether it did.
+case " $* " in *" --resolve "*) : ;; *) echo "curl called without --resolve" >&2; exit 99 ;; esac
 printf '%s' "${MOCK_HTTP_CODE:-200}"
 SHIM
 
-chmod +x "$MOCK_DIR"/aws "$MOCK_DIR"/kubectl "$MOCK_DIR"/curl
+cat > "$MOCK_DIR/getent" <<'SHIM'
+#!/usr/bin/env bash
+ip="${MOCK_LB_IP-203.0.113.10}"; [ -n "$ip" ] && printf '%s STREAM %s\n' "$ip" "$2"
+SHIM
+
+chmod +x "$MOCK_DIR"/aws "$MOCK_DIR"/kubectl "$MOCK_DIR"/curl "$MOCK_DIR"/getent
 
 # run_check <check-fn> — source lib.sh with the shims on PATH and run one check.
 run_check() {
@@ -186,6 +198,32 @@ MOCK_ACM_STATUS=PENDING_VALIDATION MOCK_POOL_COUNT=1 run_check check_base \
 MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=0 run_check check_base \
   && _fail "base: rejects a missing user pool" || _pass "base: rejects a missing user pool"
 
+# A phase is applied only when its apply has FINISHED. On build #9 the
+# certificate was ISSUED and the pool existed ~2 min before base's apply had
+# written its state; a check on those alone sent the operator to management
+# against unfinished base state. The state object must exist and its lock
+# must be free.
+MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_OBJECTS=0 run_check check_base \
+  && _fail "base: rejects cert+pool when base's state has not been written" \
+  || _pass "base: rejects cert+pool when base's state has not been written"
+
+MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_LOCK="bucket/k8-platform/base/terraform.tfstate" run_check check_base \
+  && _fail "base: rejects cert+pool while base's apply still holds the lock" \
+  || _pass "base: rejects cert+pool while base's apply still holds the lock"
+
+# An UNREADABLE lock (IAM denial, API error) must not read as a free one.
+MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_LOCK_RC=254 run_check check_base \
+  && _fail "base: rejects when the lock item cannot be read (fail closed)" \
+  || _pass "base: rejects when the lock item cannot be read (fail closed)"
+
+MOCK_CLUSTER_STATUS=ACTIVE MOCK_NODEGROUP_STATUS=ACTIVE MOCK_STATE_LOCK="bucket/k8-platform/management/terraform.tfstate" run_check check_management \
+  && _fail "management: rejects a live hub while management's apply still holds the lock" \
+  || _pass "management: rejects a live hub while management's apply still holds the lock"
+
+MOCK_CLUSTER_STATUS=ACTIVE MOCK_NODEGROUP_STATUS=ACTIVE run_check check_management \
+  && _pass "management: ACTIVE cluster + node group + bootstrap + settled state" \
+  || _fail "management: ACTIVE cluster + node group + bootstrap + settled state"
+
 MOCK_CLUSTER_STATUS=CREATING run_check check_management \
   && _fail "management: rejects a cluster that is still CREATING" \
   || _pass "management: rejects a cluster that is still CREATING"
@@ -202,6 +240,22 @@ MOCK_HTTP_CODE=000 run_check check_endpoint \
 
 MOCK_HTTP_CODE=503 run_check check_endpoint \
   && _fail "endpoint: rejects 503" || _pass "endpoint: rejects 503"
+
+# The record is read from Route53, the authority, and the request is pinned to
+# its target. Build #9: the box's VPC resolver negatively cached hello.platform
+# for 900 s after the driver asked too early, and a working endpoint read RED
+# past the budget. No record in the zone must still be RED.
+MOCK_R53_ALIAS=None MOCK_R53_PLAIN=None MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _fail "endpoint: rejects when the zone carries no hello.platform record" \
+  || _pass "endpoint: rejects when the zone carries no hello.platform record"
+
+MOCK_R53_ALIAS=None MOCK_R53_PLAIN=198.51.100.7 MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _pass "endpoint: accepts a plain A record as the target" \
+  || _fail "endpoint: accepts a plain A record as the target"
+
+MOCK_LB_IP="" MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _fail "endpoint: rejects when the alias target does not resolve" \
+  || _pass "endpoint: rejects when the alias target does not resolve"
 
 # ---------------------------------------------------------------------------
 # Static hygiene

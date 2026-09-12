@@ -37,7 +37,14 @@ every stage below exists because a shortcut failed on a real teardown.
 
 - `kubectl` access to the **hub** (`k8-platform-mgmt`) and the **spoke**
   (`k8-platform-services`), with permission to delete. See
-  [Get admin access and platform facts](admin-access.md).
+  [Get admin access and platform facts](admin-access.md). **Read that
+  page's access table before you start:** the committed platform grants
+  the account's IAM user (`cloud_user`) **read-only** on the spoke, and
+  measured on build #9 `kubectl auth can-i delete svc -n ingress-nginx`
+  answers `no` there. Without a spoke admin from the directory path,
+  stages 2 and 3 cannot be run on the spoke as written; use the AWS-API
+  fallbacks those stages and stage 6 give (delete the orphaned load
+  balancer, delete the `available` volumes) once the cluster is gone.
 - Credentials for the account, and permission to run
   `workflow_dispatch` on `.github/workflows/terraform-test.yml`.
 - Nobody else is merging to `main` for the duration.
@@ -368,6 +375,30 @@ Confirm they are gone — this is exactly what the bring-up probe checks:
 aws s3api head-bucket --bucket "$BUCKET"           # expect an error
 aws dynamodb describe-table --table-name "$TABLE"  # expect an error
 ```
+
+## 8. The ops box
+
+If the platform was built the documented way, from the **ops box**
+([Build the platform from nothing](build-the-platform-from-nothing.md)),
+that instance is still running after stage 6. It is not part of the
+platform: it lives in the default VPC, is created and destroyed by its
+own workflow, and survives the teardown **on purpose**, so the stages
+above can be watched from it. Stage 6's checks do not count it as a
+leftover; expect one running `t3.small` named `k8-platform-opsbox` and
+its IAM role and instance profile of the same name.
+
+When you are finished with the account: **Actions → Ops box → Run
+workflow**, action `destroy`. Do this **before** step 7, because the
+box's Terraform state lives in the same state bucket, and a destroy run
+after the bucket is gone has nothing to read.
+
+Two honest limits. The box's role holds cluster-admin on the **hub**
+only (it grants itself an EKS access entry there on first use) and no
+access entry on the spoke, so stages 2 and 3 above cannot be run from
+the box today; they need the spoke access described on the admin page.
+And the ops box has never been destroyed by that workflow on an account
+that had also carried a platform: build #9 is the first account to
+exercise the sequence, and its result is recorded in `ai/handoff.md`.
 
 ## Budgets, end to end
 

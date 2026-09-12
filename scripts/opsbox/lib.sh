@@ -91,6 +91,36 @@ kc() {
   kubectl "$@"
 }
 
+# ---- Terraform phases ------------------------------------------------------
+# A phase's apply is FINISHED when its remote state has been written and nobody
+# holds its lock any more. This exists because the "things the phase creates"
+# checks below go true too early: on build #9 the wildcard certificate was
+# ISSUED and the user pool existed about two minutes before base's apply had
+# finished the VPC, so a check on those alone told the operator to start
+# management against a base whose state was still being written.
+#
+# The S3 backend writes the state object and holds a DynamoDB item whose LockID
+# is "<bucket>/<key>" for exactly the duration of an apply (the "<key>-md5"
+# digest item persists and is not a lock). Both are read-only reads against the
+# account: ask the world, not the workflow.
+STATE_TABLE="${STATE_TABLE:-k8-platform-tfstate-lock}"
+
+state_settled() {
+  phase="$1"
+  acct="$(account_id)"; [ -n "$acct" ] || return 1
+  bucket="k8-platform-tfstate-${acct}"
+  key="k8-platform/${phase}/terraform.tfstate"
+  n="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix "$key" \
+       --query "length(Contents[?Key=='${key}'] || \`[]\`)" --output text 2>/dev/null)"
+  [ "${n:-0}" -ge 1 ] 2>/dev/null || return 1
+  # Fail closed: if the lock cannot be READ (IAM, API error), the phase is not
+  # known to be settled. An unreadable lock must never read as a free one.
+  lock="$(aws dynamodb get-item --table-name "$STATE_TABLE" \
+          --key "{\"LockID\":{\"S\":\"${bucket}/${key}\"}}" \
+          --query 'Item.LockID.S' --output text 2>/dev/null)" || return 1
+  case "$lock" in ""|None) return 0 ;; *) return 1 ;; esac
+}
+
 # ---- stage checks ---------------------------------------------------------
 # Each returns 0 when the stage is genuinely true of the world.
 
@@ -100,8 +130,11 @@ check_zone() { [ -n "$(platform_domain)" ]; }
 
 # Base is applied when the things base creates exist: the wildcard certificate
 # is ISSUED and the Cognito user pool is there. These are exactly the
-# assertions the workflow's own `[base] e2e-verify` step makes.
+# assertions the workflow's own `[base] e2e-verify` step makes. AND its apply
+# has finished: both exist early in the apply (build #9), so on their own they
+# would send the operator to management too soon.
 check_base() {
+  state_settled base || return 1
   dom="$(platform_domain)"; [ -n "$dom" ] || return 1
   st="$(aws acm list-certificates \
         --query "CertificateSummaryList[?DomainName=='*.${dom}'].Status | [0]" \
@@ -116,6 +149,7 @@ check_base() {
 # AND Argo CD's bootstrap Application exists — the cluster alone is not enough,
 # because the Helm releases land minutes later.
 check_management() {
+  state_settled management || return 1
   [ "$(aws eks describe-cluster --name "$HUB_CLUSTER" \
         --query 'cluster.status' --output text 2>/dev/null)" = "ACTIVE" ] || return 1
   ng="$(aws eks list-nodegroups --cluster-name "$HUB_CLUSTER" \
@@ -181,10 +215,43 @@ check_converged() {
 
 # The behavioural gate. This is THE check — a real request over the public
 # internet to the demo app on the spoke.
+#
+# The hostname is resolved from Route53 itself, not through the box's resolver.
+# The VPC resolver caches a NEGATIVE answer for the zone's SOA minimum (900 s
+# on Route53), and this check necessarily asks for hello.platform BEFORE
+# ExternalDNS has written it — so on build #9 the box could not see a record
+# that existed, and had answered 200 from elsewhere, for a quarter of an hour;
+# the driver's 600 s endpoint budget ran out on a working platform. Reading
+# the record from the authority and pinning the connection to its target
+# (`--resolve`) keeps the request honest: same hostname, same SNI, same
+# certificate validation, no dependence on what a cache remembers.
+endpoint_target_ip() {
+  host="$1"
+  # shellcheck disable=SC2016
+  zone="$(aws route53 list-hosted-zones \
+    --query 'HostedZones[?Config.PrivateZone==`false`].Id | [0]' --output text 2>/dev/null)"
+  [ -n "$zone" ] && [ "$zone" != "None" ] || return 1
+  rec="$(aws route53 list-resource-record-sets --hosted-zone-id "$zone" \
+    --query "ResourceRecordSets[?Name=='${host}.' && Type=='A'] | [0].[AliasTarget.DNSName, ResourceRecords[0].Value]" \
+    --output text 2>/dev/null)"
+  alias="$(printf '%s' "$rec" | cut -f1)"; plain="$(printf '%s' "$rec" | cut -f2)"
+  if [ -n "$alias" ] && [ "$alias" != "None" ]; then
+    # An alias to a load balancer: its own name resolves (it existed from the
+    # moment the balancer did, so it was never negatively cached).
+    getent ahostsv4 "${alias%.}" 2>/dev/null | awk 'NR==1 {print $1}'
+  elif [ -n "$plain" ] && [ "$plain" != "None" ]; then
+    printf '%s\n' "$plain"
+  else
+    return 1
+  fi
+}
+
 check_endpoint() {
   dom="$(platform_domain)"; [ -n "$dom" ] || return 1
+  host="hello.platform.${dom}"
+  ip="$(endpoint_target_ip "$host")"; [ -n "$ip" ] || return 1
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-          "https://hello.platform.${dom}/" 2>/dev/null)"
+          --resolve "${host}:443:${ip}" "https://${host}/" 2>/dev/null)"
   [ "$code" = "200" ]
 }
 
