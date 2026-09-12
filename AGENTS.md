@@ -81,13 +81,14 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
 - When the owner asks for something, deliver exactly that. Never fix, tidy,
   or "improve" what you were asked to show; report what you noticed and wait.
 - Act on the answer to a question you asked; it overrides your prior plan.
-- `[Request interrupted by user]` is a hard stop: no pivot to adjacent work;
-  kill background processes; wait for direction.
+- `[Request interrupted by user]` is a hard stop: no pivot; kill jobs; wait.
+- Never schedule periodic check-ins, timers, or polling wake-ups to wait on
+  the owner (a review, a decision, a merge): end the turn; a reply wakes you.
 - For large compound prompts (≥3 distinct actions or genuine ambiguity),
   confirm scope first — unless the owner signals "just go", which suspends
   only this repeat-back, never the done-contract or test discipline.
 - Exhaust your own capabilities before asking (probe, install, read the
-  output); ask only at genuine forks with cost or irreversibility.
+  output); ask only at forks with real cost or irreversibility.
 
 ## Test discipline
 
@@ -110,8 +111,8 @@ authority; conflicts resolve toward the spec; ambiguity → ask, don't hybridize
 - Never commit to `main`. Branches: `feat/ fix/ chore/ test/ docs/`. Stacked
   PRs are affirmatively allowed (standing owner override) — base each child on
   the branch that last touched its files.
-- One logical change per commit; imperative subject ≤72 chars; body says why.
-  Never commit secrets, state files, or `terraform.tfvars`.
+- One logical change per commit; subject ≤72 chars; body says why. Never
+  commit secrets, state files, or `terraform.tfvars`.
 - Terraform: plan before apply; version pins change deliberately with reasons;
   both modules pass `terraform validate` before a PR is ready.
 - "Tear down phase X" means exactly: (1) delete phase-X XRs and wait for
