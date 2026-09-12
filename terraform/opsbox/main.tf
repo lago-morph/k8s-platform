@@ -109,6 +109,7 @@ data "aws_iam_policy_document" "opsbox" {
       "acm:ListCertificates",
       "cloudwatch:GetMetricData",
       "dynamodb:DescribeTable",
+      "dynamodb:GetItem", # the state lock item: held for exactly the duration of an apply
       "ec2:Describe*",
       "eks:Describe*",
       "eks:List*",

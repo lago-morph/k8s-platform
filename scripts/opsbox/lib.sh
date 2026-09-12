@@ -91,6 +91,34 @@ kc() {
   kubectl "$@"
 }
 
+# ---- Terraform phases ------------------------------------------------------
+# A phase's apply is FINISHED when its remote state has been written and nobody
+# holds its lock any more. This exists because the "things the phase creates"
+# checks below go true too early: on build #9 the wildcard certificate was
+# ISSUED and the user pool existed about two minutes before base's apply had
+# finished the VPC, so a check on those alone told the operator to start
+# management against a base whose state was still being written.
+#
+# The S3 backend writes the state object and holds a DynamoDB item whose LockID
+# is "<bucket>/<key>" for exactly the duration of an apply (the "<key>-md5"
+# digest item persists and is not a lock). Both are read-only reads against the
+# account: ask the world, not the workflow.
+STATE_TABLE="${STATE_TABLE:-k8-platform-tfstate-lock}"
+
+state_settled() {
+  phase="$1"
+  acct="$(account_id)"; [ -n "$acct" ] || return 1
+  bucket="k8-platform-tfstate-${acct}"
+  key="k8-platform/${phase}/terraform.tfstate"
+  n="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix "$key" \
+       --query "length(Contents[?Key=='${key}'] || \`[]\`)" --output text 2>/dev/null)"
+  [ "${n:-0}" -ge 1 ] 2>/dev/null || return 1
+  lock="$(aws dynamodb get-item --table-name "$STATE_TABLE" \
+          --key "{\"LockID\":{\"S\":\"${bucket}/${key}\"}}" \
+          --query 'Item.LockID.S' --output text 2>/dev/null)"
+  case "$lock" in ""|None) return 0 ;; *) return 1 ;; esac
+}
+
 # ---- stage checks ---------------------------------------------------------
 # Each returns 0 when the stage is genuinely true of the world.
 
@@ -100,8 +128,11 @@ check_zone() { [ -n "$(platform_domain)" ]; }
 
 # Base is applied when the things base creates exist: the wildcard certificate
 # is ISSUED and the Cognito user pool is there. These are exactly the
-# assertions the workflow's own `[base] e2e-verify` step makes.
+# assertions the workflow's own `[base] e2e-verify` step makes. AND its apply
+# has finished: both exist early in the apply (build #9), so on their own they
+# would send the operator to management too soon.
 check_base() {
+  state_settled base || return 1
   dom="$(platform_domain)"; [ -n "$dom" ] || return 1
   st="$(aws acm list-certificates \
         --query "CertificateSummaryList[?DomainName=='*.${dom}'].Status | [0]" \
@@ -116,6 +147,7 @@ check_base() {
 # AND Argo CD's bootstrap Application exists — the cluster alone is not enough,
 # because the Helm releases land minutes later.
 check_management() {
+  state_settled management || return 1
   [ "$(aws eks describe-cluster --name "$HUB_CLUSTER" \
         --query 'cluster.status' --output text 2>/dev/null)" = "ACTIVE" ] || return 1
   ng="$(aws eks list-nodegroups --cluster-name "$HUB_CLUSTER" \
