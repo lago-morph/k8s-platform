@@ -30,6 +30,7 @@ svc="${1:-}"; op="${2:-}"
 case "$svc $op" in
   "sts get-caller-identity") printf '%s\n' "${MOCK_ACCOUNT:-123456789012}" ;;
   "route53 list-hosted-zones") printf '%s\n' "${MOCK_ZONE:-example.com.}" ;;
+  "route53 list-resource-record-sets") printf '%s\t%s\n' "${MOCK_R53_ALIAS:-lb-1234.elb.example.amazonaws.com.}" "${MOCK_R53_PLAIN:-None}" ;;
   "acm list-certificates") printf '%s\n' "${MOCK_ACM_STATUS:-ISSUED}" ;;
   "cognito-idp list-user-pools") printf '%s\n' "${MOCK_POOL_COUNT:-1}" ;;
   "eks describe-cluster") printf '%s\n' "${MOCK_CLUSTER_STATUS:-ACTIVE}" ;;
@@ -64,10 +65,18 @@ SHIM
 
 cat > "$MOCK_DIR/curl" <<'SHIM'
 #!/usr/bin/env bash
+# The check must pin the connection to the Route53 target, never trust the
+# local resolver (negative-cache class, build #9). Record whether it did.
+case " $* " in *" --resolve "*) : ;; *) echo "curl called without --resolve" >&2; exit 99 ;; esac
 printf '%s' "${MOCK_HTTP_CODE:-200}"
 SHIM
 
-chmod +x "$MOCK_DIR"/aws "$MOCK_DIR"/kubectl "$MOCK_DIR"/curl
+cat > "$MOCK_DIR/getent" <<'SHIM'
+#!/usr/bin/env bash
+ip="${MOCK_LB_IP-203.0.113.10}"; [ -n "$ip" ] && printf '%s STREAM %s\n' "$ip" "$2"
+SHIM
+
+chmod +x "$MOCK_DIR"/aws "$MOCK_DIR"/kubectl "$MOCK_DIR"/curl "$MOCK_DIR"/getent
 
 # run_check <check-fn> — source lib.sh with the shims on PATH and run one check.
 run_check() {
@@ -231,6 +240,22 @@ MOCK_HTTP_CODE=000 run_check check_endpoint \
 
 MOCK_HTTP_CODE=503 run_check check_endpoint \
   && _fail "endpoint: rejects 503" || _pass "endpoint: rejects 503"
+
+# The record is read from Route53, the authority, and the request is pinned to
+# its target. Build #9: the box's VPC resolver negatively cached hello.platform
+# for 900 s after the driver asked too early, and a working endpoint read RED
+# past the budget. No record in the zone must still be RED.
+MOCK_R53_ALIAS=None MOCK_R53_PLAIN=None MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _fail "endpoint: rejects when the zone carries no hello.platform record" \
+  || _pass "endpoint: rejects when the zone carries no hello.platform record"
+
+MOCK_R53_ALIAS=None MOCK_R53_PLAIN=198.51.100.7 MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _pass "endpoint: accepts a plain A record as the target" \
+  || _fail "endpoint: accepts a plain A record as the target"
+
+MOCK_LB_IP="" MOCK_HTTP_CODE=200 run_check check_endpoint \
+  && _fail "endpoint: rejects when the alias target does not resolve" \
+  || _pass "endpoint: rejects when the alias target does not resolve"
 
 # ---------------------------------------------------------------------------
 # Static hygiene

@@ -215,10 +215,43 @@ check_converged() {
 
 # The behavioural gate. This is THE check — a real request over the public
 # internet to the demo app on the spoke.
+#
+# The hostname is resolved from Route53 itself, not through the box's resolver.
+# The VPC resolver caches a NEGATIVE answer for the zone's SOA minimum (900 s
+# on Route53), and this check necessarily asks for hello.platform BEFORE
+# ExternalDNS has written it — so on build #9 the box could not see a record
+# that existed, and had answered 200 from elsewhere, for a quarter of an hour;
+# the driver's 600 s endpoint budget ran out on a working platform. Reading
+# the record from the authority and pinning the connection to its target
+# (`--resolve`) keeps the request honest: same hostname, same SNI, same
+# certificate validation, no dependence on what a cache remembers.
+endpoint_target_ip() {
+  host="$1"
+  # shellcheck disable=SC2016
+  zone="$(aws route53 list-hosted-zones \
+    --query 'HostedZones[?Config.PrivateZone==`false`].Id | [0]' --output text 2>/dev/null)"
+  [ -n "$zone" ] && [ "$zone" != "None" ] || return 1
+  rec="$(aws route53 list-resource-record-sets --hosted-zone-id "$zone" \
+    --query "ResourceRecordSets[?Name=='${host}.' && Type=='A'] | [0].[AliasTarget.DNSName, ResourceRecords[0].Value]" \
+    --output text 2>/dev/null)"
+  alias="$(printf '%s' "$rec" | cut -f1)"; plain="$(printf '%s' "$rec" | cut -f2)"
+  if [ -n "$alias" ] && [ "$alias" != "None" ]; then
+    # An alias to a load balancer: its own name resolves (it existed from the
+    # moment the balancer did, so it was never negatively cached).
+    getent ahostsv4 "${alias%.}" 2>/dev/null | awk 'NR==1 {print $1}'
+  elif [ -n "$plain" ] && [ "$plain" != "None" ]; then
+    printf '%s\n' "$plain"
+  else
+    return 1
+  fi
+}
+
 check_endpoint() {
   dom="$(platform_domain)"; [ -n "$dom" ] || return 1
+  host="hello.platform.${dom}"
+  ip="$(endpoint_target_ip "$host")"; [ -n "$ip" ] || return 1
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-          "https://hello.platform.${dom}/" 2>/dev/null)"
+          --resolve "${host}:443:${ip}" "https://${host}/" 2>/dev/null)"
   [ "$code" = "200" ]
 }
 
