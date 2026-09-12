@@ -48,6 +48,45 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ## The readiness checklist
 
+**Clean build #9 — 2026-09-12, a NEW account (`851725259254`), nothing in <!-- noqa: account-id - run provenance, account rotates -->
+it but the pre-existing hosted zone**
+**(ninth from-scratch build; the OPS-BOX build — the first driven by the
+committed ops box and its `k8p-bringup.sh` rather than by an operator
+interpreting workflow logs. Single-SHA on the platform side: probe, both
+applies and both gate syncs ran one `main` SHA,
+`b41f48cdc0e7a532da4c69305d41133bf822e541`; the ops box and its scripts ran
+the feature branch, heads `31c812a` → `9011d56` as the run found and fixed
+two script defects.)**
+Region us-east-1; hub EKS `k8-platform-mgmt`, spoke EKS
+`k8-platform-services`.
+Build chain: probe (`test` / `test-e2e`) **34672814841**, red by design
+(creds 3/3, zone 4/4, state-backend **0/2** — the documented fresh-account
+signature) → ops box **34673149665**, `apply`, success in **2m18s**, its
+self-test printing the status screen with credentials and zone GREEN and
+every stage RED → base **34673406430**, `apply-and-verify` success,
+**3m14s** → management **34673599867**, success, **18m42s** → gate 1
+`platform-cluster-claim` synced by the driver at `b41f48c…`, confirmed by
+its completed operation, four facts and node group Ready **14m31s** from
+the sync → gate 2 `spoke-access`, same SHA, XSpokeAccess Ready **4m00s**
+→ 17 Applications converged (`workload1-cluster` OutOfSync by design)
+**4m47s** later → hello endpoint HTTP 200 with the expected body → Live
+verify **RUN_LIVE**, profile `full`, DUR_LIVE.
+**Two script defects the live run exposed, both fixed with a red-first
+unit test and re-verified on the box (`kp-2al.34`):** (1) `check_base`
+went GREEN **46 s** into the base apply — the certificate was ISSUED and
+the pool existed at 04:36:02 while the apply ran until 04:38:33 — so the
+phase checks now also require the phase's Terraform state object to exist
+and its DynamoDB lock item to be absent (probed live: base settled,
+management held during its apply); (2) `check_endpoint` trusted the box's
+VPC resolver, which had cached NXDOMAIN for `hello.platform` (Route53 SOA
+minimum 900 s) because the driver asked before ExternalDNS wrote the
+record — the endpoint answered 200 from the sandbox at the same moment —
+so the check now reads the record from Route53 and pins the request with
+`--resolve`; the re-run went `BRING-UP COMPLETE` in 2 s and
+`k8p-status.sh` read ALL GREEN.
+**Teardown:** see `ai/handoff.md` (executed at the end of the same session
+so the account is fresh for `kp-2al.10`).
+
 **Clean build #7 — 2026-09-10, the same account as build #6 (`801822495028`), <!-- noqa: account-id - run provenance, account rotates -->
 emptied to nothing and rebuilt from scratch**
 **(seventh consecutive from-scratch build; the DOCUMENTATION build — the
@@ -542,6 +581,20 @@ run ID.
    expect-full gap, which these runs did not record either way and which
    therefore stays `pending clean-build verification`; and the
    merge-before-live-evidence circularity from build #6, untouched.
+
+9. ~~Clean build #9: the ops box drives the bring-up.~~ **DONE** — clean
+   build #9 above (2026-09-12, a new account): `terraform/opsbox` applied by
+   its own workflow on a fresh account, its self-test green, and
+   `scripts/opsbox/k8p-bringup.sh` took the platform from base to a serving
+   hello endpoint with the operator's part reduced to four workflow
+   dispatches. It found two optimistic-direction defects in the driver's own
+   checks (base declared applied mid-apply; the endpoint declared down on a
+   stale negative DNS cache) and fixed both with tests before the bead
+   closed. Still owed: a **human** executing the rewritten page on a fresh
+   account (`kp-2al.10`, the page keeps `status: contract`); the browser
+   shell opened by a person from the console (the build reached the box over
+   the same Systems Manager channel by `send-command`); the ops-box
+   `destroy` action on an account that also carried a platform.
 
 A fix that cannot be validated this way stays `pending clean-build
 verification` and is carried as a **blocker**, not silently deferred into the

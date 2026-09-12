@@ -134,11 +134,11 @@ the thing the run was supposed to create is actually there.
 
 | Stage | Your action | What the script waits for | Measured |
 |---|---|---|---|
-| Ops box | **Ops box** → `apply` | — (the run's own self-test) | DUR_OPSBOX (build #9) |
-| Base | **Terraform Test** → `base`, `apply-and-verify` | base's Terraform state written and unlocked, wildcard certificate `ISSUED`, Cognito user pool present | 3m21s (build #8), DUR_BASE (build #9) |
-| Management | **Terraform Test** → `management`, `apply-and-verify` | management's state written and unlocked, hub `ACTIVE`, node group `ACTIVE`, `bootstrap` Application present; then `crossplane-resources` Synced/Healthy | 20m15s (build #8), DUR_MGMT (build #9); transients settle about 8 min later |
-| Gate 1 | none | the platform-cluster XR publishes four facts and the spoke node group is Ready | 13m48s (build #8), DUR_GATE1 (build #9); 14–25 min across builds |
-| Gate 2 | none | `XSpokeAccess` Ready | 5m22s (build #8), DUR_GATE2 (build #9) |
+| Ops box | **Ops box** → `apply` | — (the run's own self-test) | 2m18s (build #9) |
+| Base | **Terraform Test** → `base`, `apply-and-verify` | base's Terraform state written and unlocked, wildcard certificate `ISSUED`, Cognito user pool present | 3m21s (build #8), 3m14s (build #9) |
+| Management | **Terraform Test** → `management`, `apply-and-verify` | management's state written and unlocked, hub `ACTIVE`, node group `ACTIVE`, `bootstrap` Application present; then `crossplane-resources` Synced/Healthy | 20m15s (build #8), 18m42s (build #9); transients settle about 8 min later |
+| Gate 1 | none | the platform-cluster XR publishes four facts and the spoke node group is Ready | 13m48s (build #8), 14m31s (build #9); 14–25 min across builds |
+| Gate 2 | none | `XSpokeAccess` Ready | 5m22s (build #8), 4m00s (build #9) |
 | Converge | none | every Application Synced/Healthy except `workload1-cluster` | about 4 min after gate 2 |
 | Verify | **Live verify** | — | DUR_LIVE (build #9) |
 
@@ -177,7 +177,7 @@ you need:
 - **How to reach it** prints a **console URL**. Keep that tab open; it
   is your door to the box.
 
-Reference run: **RUN_OPSBOX_APPLY**, `apply`, success, **DUR_OPSBOX**
+Reference run: **34673149665**, `apply`, success, **2m18s**
 end to end (build #9). Instance in `us-east-1d`; self-test showed the
 checkout at the dispatched commit and `aws kubectl jq yq helm` all
 present.
@@ -269,7 +269,7 @@ and prints `GREEN base applied`. The state condition matters: on build
 #9 the certificate and the pool both existed about two minutes before
 the apply had finished the VPC, so the facts alone go green too early.
 
-Reference run: **RUN_BASE**, `apply-and-verify`, success, **DUR_BASE**
+Reference run: **34673406430**, `apply-and-verify`, success, **3m14s**
 (build #9).
 
 ### Second stop: build the management layer
@@ -301,7 +301,7 @@ the composite resource definitions land builds nothing.
     does not read it and neither should you. It checks the platform's
     endpoints itself at the end.
 
-Reference run: **RUN_MGMT**, `apply-and-verify`, success, **DUR_MGMT**
+Reference run: **34673599867**, `apply-and-verify`, success, **18m42s**
 (build #9).
 
 ### No more stops: the gates and the convergence
@@ -317,11 +317,11 @@ things gate 2 actually consumes: the platform-cluster XR's four
 published facts (`oidcIssuer`, `endpoint`, `clusterCaData`,
 `certificateArn`) and a Ready spoke node group. This provisions a real
 EKS cluster and is the longest wait in the build: **14 to 25 minutes**
-across the builds measured so far, **DUR_GATE1** on build #9. The
+across the builds measured so far, **14m31s** on build #9. The
 budget is 40 minutes; past about 35 with no change, trace it (step 6).
 
 **Gate 2**, registering the spoke. Same SHA, same confirmation, then a
-wait for `XSpokeAccess` to reach Ready. **DUR_GATE2** on build #9. This
+wait for `XSpokeAccess` to reach Ready. **4m00s** on build #9. This
 creates the OIDC provider for the spoke's issuer, the IRSA roles for
 ExternalDNS and the secrets operator, an EKS access entry for the hub's
 Argo CD role, and the spoke's registration Secret on the hub, which is
@@ -338,10 +338,21 @@ internet, and prints the response body. Then:
 BRING-UP COMPLETE
 ```
 
-On build #9 that line came DUR_TOTAL after the script started. If the
-script ends `STOPPED` instead, it names the stage and, where one
-exists, the exact trace command to run next. Fix nothing by hand; see
-step 6.
+On build #9 the stack had converged **42 minutes** after the script
+first asked for the management build (management 14m56s from that
+request to the script's detection, the transient Applications 2m56s,
+gate 1 14m31s, gate 2 4m00s, convergence 4m47s). If the script ends
+`STOPPED` instead, it names the stage and, where one exists, the exact
+trace command to run next. Fix nothing by hand; see step 6.
+
+Build #9's first pass did end `STOPPED`, on the endpoint check, with the
+platform serving: the box's resolver had cached a negative answer for
+`hello.platform` because the script necessarily asked for it before
+ExternalDNS wrote the record, and Route53's negative TTL (900 s) is
+longer than the check's budget. The script now reads the record from
+Route53 itself and pins the request to its target, and the re-run
+reached `BRING-UP COMPLETE` in two seconds. That is exactly the
+resumable path described above, exercised for real.
 
 ## 4. Verify that it works
 
@@ -435,7 +446,7 @@ spoke-side reads are not part of this page.
 |---|---|---|
 | Spoke EKS cluster + node group (gate 1) | 14–25 min to the four facts on the builds measured; the script allows 40 | The longest wait in the build. Past about 35 min with no change, trace it |
 | `crossplane-resources`, `keycloak-db`, `keycloak-secrets` after management | about 8 min | Transient `OutOfSync`; the script waits for the first before syncing a gate |
-| The hello endpoint after the stack converges | 10 min in the script | DNS and the load balancer settle after the spoke is up |
+| The hello endpoint after the stack converges | 10 min in the script | DNS and the load balancer settle after the spoke is up. The script resolves the name from Route53, not the box's resolver, because the VPC resolver caches a negative answer for 900 s once the name has been asked for too early (build #9) |
 | The Argo CD hostname after the management build | 5 min | Its record and load balancer often settle after the run ends |
 | Keycloak's OIDC discovery endpoint | 10 min (the oracle polls for 600 s) | Keycloak starts after its database and its secrets; it is the last thing to come up |
 | Federated `kubectl` after the identity-provider association is `ACTIVE` | about 10–25 min after the build completes | EKS does not honour tokens from the issuer the moment the association exists. `Unauthorized` in that window is expected; retry, change nothing. Only Live verify's federation check touches this |
@@ -526,8 +537,8 @@ ADR-0017 (bring-up is a user-facing product surface), ADR-0018
 facts ride the registration Secret), ADR-0008 (the SSM relay is
 implementation-time only), ADR-0006 (behavioral verification coupled to
 the build is the oracle). Reference runs, build #9, 2026-09-12, fresh
-account: ops box RUN_OPSBOX_APPLY, base RUN_BASE, management RUN_MGMT,
-live verify RUN_LIVE, gate SHA `GATE_SHA`. Earlier evidence: clean
+account: ops box 34673149665, base 34673406430, management 34673599867,
+live verify RUN_LIVE, gate SHA `b41f48cdc0e7a532da4c69305d41133bf822e541`. Earlier evidence: clean
 builds #6, #7 and #8 (`SUBSTRATE-READINESS.md`), whose corrections
 (`kp-2al.23`, `kp-2al.24`, `kp-2al.25`, `kp-2al.26`) the script encodes.
 Lesson L37 is why the gates sync at an explicit SHA.*

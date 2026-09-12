@@ -37,7 +37,14 @@ every stage below exists because a shortcut failed on a real teardown.
 
 - `kubectl` access to the **hub** (`k8-platform-mgmt`) and the **spoke**
   (`k8-platform-services`), with permission to delete. See
-  [Get admin access and platform facts](admin-access.md).
+  [Get admin access and platform facts](admin-access.md). **Read that
+  page's access table before you start:** the committed platform grants
+  the account's IAM user (`cloud_user`) **read-only** on the spoke, and
+  measured on build #9 `kubectl auth can-i delete svc -n ingress-nginx`
+  answers `no` there. Without a spoke admin from the directory path,
+  stages 2 and 3 cannot be run on the spoke as written; use the AWS-API
+  fallbacks those stages and stage 6 give (delete the orphaned load
+  balancer, delete the `available` volumes) once the cluster is gone.
 - Credentials for the account, and permission to run
   `workflow_dispatch` on `.github/workflows/terraform-test.yml`.
 - Nobody else is merging to `main` for the duration.
