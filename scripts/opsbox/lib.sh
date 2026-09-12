@@ -113,9 +113,11 @@ state_settled() {
   n="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix "$key" \
        --query "length(Contents[?Key=='${key}'] || \`[]\`)" --output text 2>/dev/null)"
   [ "${n:-0}" -ge 1 ] 2>/dev/null || return 1
+  # Fail closed: if the lock cannot be READ (IAM, API error), the phase is not
+  # known to be settled. An unreadable lock must never read as a free one.
   lock="$(aws dynamodb get-item --table-name "$STATE_TABLE" \
           --key "{\"LockID\":{\"S\":\"${bucket}/${key}\"}}" \
-          --query 'Item.LockID.S' --output text 2>/dev/null)"
+          --query 'Item.LockID.S' --output text 2>/dev/null)" || return 1
   case "$lock" in ""|None) return 0 ;; *) return 1 ;; esac
 }
 

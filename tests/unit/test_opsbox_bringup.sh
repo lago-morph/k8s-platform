@@ -37,7 +37,8 @@ case "$svc $op" in
   "eks describe-nodegroup") printf '%s\n' "${MOCK_NODEGROUP_STATUS:-ACTIVE}" ;;
   "eks update-kubeconfig") exit "${MOCK_KUBECONFIG_RC:-0}" ;;
   "s3api list-objects-v2") printf '%s\n' "${MOCK_STATE_OBJECTS:-1}" ;;
-  "dynamodb get-item") printf '%s\n' "${MOCK_STATE_LOCK:-None}" ;;
+  "dynamodb get-item") [ "${MOCK_STATE_LOCK_RC:-0}" -eq 0 ] || exit "$MOCK_STATE_LOCK_RC"
+                        printf '%s\n' "${MOCK_STATE_LOCK:-None}" ;;
   "eks describe-access-entry"|"eks create-access-entry"|"eks associate-access-policy") exit 0 ;;
   *) exit 0 ;;
 esac
@@ -200,6 +201,11 @@ MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_OBJECTS=0 run_check check_ba
 MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_LOCK="bucket/k8-platform/base/terraform.tfstate" run_check check_base \
   && _fail "base: rejects cert+pool while base's apply still holds the lock" \
   || _pass "base: rejects cert+pool while base's apply still holds the lock"
+
+# An UNREADABLE lock (IAM denial, API error) must not read as a free one.
+MOCK_ACM_STATUS=ISSUED MOCK_POOL_COUNT=1 MOCK_STATE_LOCK_RC=254 run_check check_base \
+  && _fail "base: rejects when the lock item cannot be read (fail closed)" \
+  || _pass "base: rejects when the lock item cannot be read (fail closed)"
 
 MOCK_CLUSTER_STATUS=ACTIVE MOCK_NODEGROUP_STATUS=ACTIVE MOCK_STATE_LOCK="bucket/k8-platform/management/terraform.tfstate" run_check check_management \
   && _fail "management: rejects a live hub while management's apply still holds the lock" \
