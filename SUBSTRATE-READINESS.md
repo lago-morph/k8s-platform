@@ -70,7 +70,7 @@ its completed operation, four facts and node group Ready **14m31s** from
 the sync → gate 2 `spoke-access`, same SHA, XSpokeAccess Ready **4m00s**
 → 17 Applications converged (`workload1-cluster` OutOfSync by design)
 **4m47s** later → hello endpoint HTTP 200 with the expected body → Live
-verify **RUN_LIVE**, profile `full`, DUR_LIVE.
+verify **34676173964**, profile `full`, success in 14m46s (`pass=17 skip=12 fail=0 expect-full-violations=0 checks=29`, `live-suite: PASS`, evidence artifact 10292837259).
 **Two script defects the live run exposed, both fixed with a red-first
 unit test and re-verified on the box (`kp-2al.34`):** (1) `check_base`
 went GREEN **46 s** into the base apply — the certificate was ISSUED and

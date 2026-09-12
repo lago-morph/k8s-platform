@@ -140,7 +140,7 @@ the thing the run was supposed to create is actually there.
 | Gate 1 | none | the platform-cluster XR publishes four facts and the spoke node group is Ready | 13m48s (build #8), 14m31s (build #9); 14–25 min across builds |
 | Gate 2 | none | `XSpokeAccess` Ready | 5m22s (build #8), 4m00s (build #9) |
 | Converge | none | every Application Synced/Healthy except `workload1-cluster` | about 4 min after gate 2 |
-| Verify | **Live verify** | — | DUR_LIVE (build #9) |
+| Verify | **Live verify** | — | 14m46s (build #9) |
 
 ## 1. Create the ops box
 
@@ -384,7 +384,7 @@ account, including the hello endpoint over valid TLS, the Argo CD
 endpoint, Keycloak's OIDC discovery, the composites and the spoke's
 storage.
 
-Reference run: **RUN_LIVE**, profile `full`, success (build #9).
+Reference run: **34676173964**, profile `full`, success (build #9).
 
 The full expected inventory, including the rows that are expectedly not
 green, is [What a finished platform contains](../reference/finished-platform.md).
@@ -538,7 +538,7 @@ facts ride the registration Secret), ADR-0008 (the SSM relay is
 implementation-time only), ADR-0006 (behavioral verification coupled to
 the build is the oracle). Reference runs, build #9, 2026-09-12, fresh
 account: ops box 34673149665, base 34673406430, management 34673599867,
-live verify RUN_LIVE, gate SHA `b41f48cdc0e7a532da4c69305d41133bf822e541`. Earlier evidence: clean
+live verify 34676173964, gate SHA `b41f48cdc0e7a532da4c69305d41133bf822e541`. Earlier evidence: clean
 builds #6, #7 and #8 (`SUBSTRATE-READINESS.md`), whose corrections
 (`kp-2al.23`, `kp-2al.24`, `kp-2al.25`, `kp-2al.26`) the script encodes.
 Lesson L37 is why the gates sync at an explicit SHA.*

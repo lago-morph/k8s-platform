@@ -25,7 +25,7 @@ The ops box drove a from-scratch build on a NEW account
 | management | 34673599867, success, 18m42s | run |
 | driver stages | management detected 896 s after the driver asked; `crossplane-resources` settled 176 s; gate 1 14m31s; gate 2 4m00s; converged 4m47s; first pass STOPPED on the endpoint (negative DNS cache, see below); re-run at `9011d56` → `BRING-UP COMPLETE` in 2 s; `k8p-status.sh` ALL GREEN, exit 0 | `/var/log/k8p-bringup{.1,,.2}.log` on the box |
 | endpoints | hello HTTP 200 in 0.47 s with the expected body (sandbox) and 200 pinned to the Route53 target (box); Argo CD HTTP 200 from both | operator measurement 05:37Z–05:42Z |
-| Live verify | **RUN_LIVE**, profile `full`, dispatched 05:40:16Z on `main` — LIVE_RESULT | run |
+| Live verify | **34676173964**, profile `full`, dispatched 05:40:16Z on `main` — success 05:55:02Z (14m46s), `pass=17 skip=12 fail=0 expect-full-violations=0 checks=29`, evidence artifact 10292837259 | run |
 | spoke access from the sandbox | `cloud_user` on the spoke: `auth can-i delete svc -n ingress-nginx` → `no`; `get pvc -A` → `yes` (3 PVCs). The committed platform grants it AdminView only | relay probe 05:44Z |
 
 **Two driver defects found and fixed on this build** (both optimistic
