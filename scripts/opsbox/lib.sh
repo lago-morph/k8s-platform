@@ -61,23 +61,61 @@ platform_domain() {
 # cannot be made in Terraform. It is made here, on first use, for the box's own
 # role. This is the box granting itself the access it needs to operate, not a
 # hand-fix to make a check pass.
+#
+# The hub gets cluster-admin: the driver patches Argo CD Applications there.
+# The spoke gets read-only AmazonEKSAdminViewPolicy (kp-2al.49): nothing the
+# box runs changes the spoke — the driver reads only the hub, and
+# k8p-kubeconfig.sh reads /readyz, nodes, can-i and whoami. AdminView rather
+# than AmazonEKSViewPolicy because `get nodes` is cluster-scoped and the
+# narrower policy is the Kubernetes `view` role, which does not grant it; it is
+# also the same policy the spoke already gives cloud_user.
+HUB_ACCESS_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+# shellcheck disable=SC2034  # used by k8p-bringup.sh, which sources this file
+SPOKE_ACCESS_POLICY="arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
+
+# first_line_of <text> — the first non-empty line, for relaying an AWS error.
+first_line_of() { printf '%s\n' "$1" | grep -m1 . || echo "no error output"; }
+
+# ensure_cluster_access <cluster> [policy-arn]
+# Idempotent: creates the box's access entry and associates the policy only
+# when missing, and prints which (or "already present"). Returns 1 when either
+# cannot be done. Policy defaults to cluster-admin (the hub's).
 ensure_cluster_access() {
   cluster="$1"
+  policy="${2:-$HUB_ACCESS_POLICY}"
   acct="$(account_id)" || return 1
-  [ -n "$acct" ] || return 1
+  [ -n "$acct" ] || { info "$cluster: no AWS identity, cannot grant access"; return 1; }
   principal="arn:aws:iam::${acct}:role/${OPSBOX_ROLE_NAME}"
 
-  aws eks describe-cluster --name "$cluster" >/dev/null 2>&1 || return 1
+  aws eks describe-cluster --name "$cluster" >/dev/null 2>&1 \
+    || { info "$cluster: cluster not found, cannot grant access"; return 1; }
 
-  if ! aws eks describe-access-entry --cluster-name "$cluster" \
+  if aws eks describe-access-entry --cluster-name "$cluster" \
         --principal-arn "$principal" >/dev/null 2>&1; then
-    aws eks create-access-entry --cluster-name "$cluster" \
-      --principal-arn "$principal" >/dev/null 2>&1 || true
+    info "$cluster: access entry for ${OPSBOX_ROLE_NAME} already present"
+  elif err="$(aws eks create-access-entry --cluster-name "$cluster" \
+        --principal-arn "$principal" 2>&1 >/dev/null)"; then
+    info "$cluster: access entry for ${OPSBOX_ROLE_NAME} created"
+  else
+    case "$err" in
+      *ResourceInUseException*) info "$cluster: access entry for ${OPSBOX_ROLE_NAME} already present" ;;
+      *) info "$cluster: could not create access entry: $(first_line_of "$err")"; return 1 ;;
+    esac
   fi
-  aws eks associate-access-policy --cluster-name "$cluster" \
-    --principal-arn "$principal" \
-    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-    --access-scope type=cluster >/dev/null 2>&1 || true
+
+  have="$(aws eks list-associated-access-policies --cluster-name "$cluster" \
+          --principal-arn "$principal" --query 'associatedAccessPolicies[].policyArn' \
+          --output text 2>/dev/null | tr '\t' '\n')"
+  if printf '%s\n' "$have" | grep -qxF "$policy"; then
+    info "$cluster: ${policy##*/} already associated"
+  elif err="$(aws eks associate-access-policy --cluster-name "$cluster" \
+        --principal-arn "$principal" --policy-arn "$policy" \
+        --access-scope type=cluster 2>&1 >/dev/null)"; then
+    info "$cluster: ${policy##*/} associated (cluster scope)"
+  else
+    info "$cluster: could not associate ${policy##*/}: $(first_line_of "$err")"
+    return 1
+  fi
 
   aws eks update-kubeconfig --name "$cluster" >/dev/null 2>&1 || return 1
   kubectl --context "$(kubectl config current-context)" version >/dev/null 2>&1 || true

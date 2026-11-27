@@ -32,7 +32,8 @@ LIVE_VERIFY_UI="https://github.com/lago-morph/k8s-platform/actions/workflows/liv
 BUDGET_BASE=900         # 3m21s on build #8; generous headroom for a slow apply
 BUDGET_MANAGEMENT=2100  # 20m15s on build #8
 BUDGET_SETTLE=900       # transients settled ~8 min after management on build #8
-BUDGET_GATE1=2400       # 13m48s-24min across builds; 35 min is the panic line
+BUDGET_GATE1="${BUDGET_GATE1:-2400}"  # 13m48s-24min across builds; 35 min is the panic line
+                                      # (env override: the unit test uses 0 to exercise the stop)
 BUDGET_GATE2=900        # 5m22s on build #8
 BUDGET_CONVERGE=1200    # converged ~4 min after gate 2 on build #8
 BUDGET_ENDPOINT=600     # DNS and the load balancer settle after the spoke is up
@@ -142,6 +143,19 @@ else
     wait_for check_gate1 "gate 1 complete (four facts + node group Ready)" "$BUDGET_GATE1" 30 \
       || fail "Gate 1 did not complete. Trace it: scripts/crossplane-trace.sh xplatformcluster/platform -n platform --watch"
   fi
+fi
+
+# Gate 1 is complete, so the spoke exists: grant this box read access to it,
+# the same way it granted itself the hub (kp-2al.49). Without this the spoke
+# answers UNAUTHORIZED to k8p-kubeconfig.sh from the box. Not fatal: nothing
+# below reads the spoke's API, so a failure is reported and the build goes on.
+if [ "$DRY_RUN" -eq 1 ]; then
+  info "would grant this box ${SPOKE_ACCESS_POLICY##*/} on the spoke $SPOKE_CLUSTER"
+elif ensure_cluster_access "$SPOKE_CLUSTER" "$SPOKE_ACCESS_POLICY"; then
+  green "ops box can read the spoke $SPOKE_CLUSTER (${SPOKE_ACCESS_POLICY##*/})"
+else
+  red "could not grant this box ${SPOKE_ACCESS_POLICY##*/} on the spoke $SPOKE_CLUSTER"
+  info "the bring-up does not need it; k8p-kubeconfig.sh will report the spoke UNAUTHORIZED until a re-run succeeds"
 fi
 
 # ---------------------------------------------------------------------------

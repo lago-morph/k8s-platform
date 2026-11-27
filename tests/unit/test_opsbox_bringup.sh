@@ -19,6 +19,7 @@ cd "$(dirname "$0")/../.."   # repo root
 LIB="scripts/opsbox/lib.sh"
 MOCK_DIR="$(mktemp -d -t opsbox-mock-XXXXXX)"
 trap 'rm -rf "$MOCK_DIR"' EXIT
+export MOCK_STATE="$MOCK_DIR/state"
 
 # ---------------------------------------------------------------------------
 # Shims. Each returns whatever the current MOCK_* variables describe.
@@ -27,6 +28,41 @@ cat > "$MOCK_DIR/aws" <<'SHIM'
 #!/usr/bin/env bash
 set -u
 svc="${1:-}"; op="${2:-}"
+# Every call is recorded (when asked) so tests can assert ORDER and absence.
+[ -n "${MOCK_CALLS:-}" ] && printf 'aws %s\n' "$*" >> "$MOCK_CALLS"
+# Named arguments the stateful access-entry world needs.
+cluster=""; policy=""; prev=""
+for a in "$@"; do
+  case "$prev" in
+    --cluster-name|--name) cluster="$a" ;;
+    --policy-arn) policy="$a" ;;
+  esac
+  prev="$a"
+done
+# Access entries and their policies persist across calls (and across runs of
+# the driver) in a state directory, so idempotency is observable.
+ST="${MOCK_STATE:?MOCK_STATE must be set by the test}"
+case "$svc $op" in
+  "eks describe-access-entry") [ -f "$ST/entry-$cluster" ]; exit $? ;;
+  "eks create-access-entry")
+    mkdir -p "$ST"
+    [ -f "$ST/entry-$cluster" ] && { echo "ResourceInUseException" >&2; exit 254; }
+    touch "$ST/entry-$cluster"; exit 0 ;;
+  "eks associate-access-policy")
+    [ "${MOCK_ASSOCIATE_RC:-0}" -eq 0 ] || exit "$MOCK_ASSOCIATE_RC"
+    [ -f "$ST/entry-$cluster" ] || exit 254
+    printf '%s\n' "$policy" >> "$ST/policies-$cluster"; exit 0 ;;
+  "eks list-associated-access-policies")
+    [ -f "$ST/policies-$cluster" ] && sort -u "$ST/policies-$cluster" | tr '\n' '\t'
+    printf '\n'; exit 0 ;;
+  "s3 cp")
+    [ "${MOCK_S3_CP_RC:-0}" -eq 0 ] || { echo "upload failed: AccessDenied" >&2; exit "$MOCK_S3_CP_RC"; }
+    # Keep what was uploaded: the first argument that is a local file.
+    if [ -n "${MOCK_UPLOADED:-}" ]; then
+      for a in "$@"; do [ -f "$a" ] && { cp "$a" "$MOCK_UPLOADED"; break; }; done
+    fi
+    exit 0 ;;
+esac
 case "$svc $op" in
   "sts get-caller-identity") printf '%s\n' "${MOCK_ACCOUNT:-123456789012}" ;;
   "route53 list-hosted-zones") printf '%s\n' "${MOCK_ZONE:-example.com.}" ;;
@@ -40,7 +76,6 @@ case "$svc $op" in
   "s3api list-objects-v2") printf '%s\n' "${MOCK_STATE_OBJECTS:-1}" ;;
   "dynamodb get-item") [ "${MOCK_STATE_LOCK_RC:-0}" -eq 0 ] || exit "$MOCK_STATE_LOCK_RC"
                         printf '%s\n' "${MOCK_STATE_LOCK:-None}" ;;
-  "eks describe-access-entry"|"eks create-access-entry"|"eks associate-access-policy") exit 0 ;;
   *) exit 0 ;;
 esac
 SHIM
@@ -50,6 +85,7 @@ cat > "$MOCK_DIR/kubectl" <<'SHIM'
 set -u
 # The interesting reads are driven by which jsonpath the caller asked for.
 all="$*"
+[ -n "${MOCK_CALLS:-}" ] && printf 'kubectl %s\n' "$all" >> "$MOCK_CALLS"
 case "$all" in
   *"get application bootstrap"*)          printf '%s' "${MOCK_BOOTSTRAP:-ok}" ;;
   *"application crossplane-resources"*)   printf '%s' "${MOCK_CROSSPLANE_RES:-Synced Healthy}" ;;
@@ -256,6 +292,130 @@ MOCK_R53_ALIAS=None MOCK_R53_PLAIN=198.51.100.7 MOCK_HTTP_CODE=200 run_check che
 MOCK_LB_IP="" MOCK_HTTP_CODE=200 run_check check_endpoint \
   && _fail "endpoint: rejects when the alias target does not resolve" \
   || _pass "endpoint: rejects when the alias target does not resolve"
+
+# ---------------------------------------------------------------------------
+# The driver end to end, against the mocked world (kp-2al.49 / kp-2al.51)
+# ---------------------------------------------------------------------------
+# run_driver <out-file> [args...] — run k8p-bringup.sh with the shims on PATH
+# and every aws/kubectl call recorded to $MOCK_CALLS. The world is "already
+# up" unless a test overrides a MOCK_* variable, so no stage waits; the
+# timeout turns a driver that unexpectedly waits into a failure, not a hang.
+DRIVER_SHA=cccccccccccccccccccccccccccccccccccccccc
+run_driver() {
+  out="$1"; shift
+  PATH="$MOCK_DIR:$PATH" NO_COLOR=1 \
+    MOCK_FACTS="${MOCK_FACTS-iss|ep|ca|arn}" MOCK_BOOTSTRAP="$DRIVER_SHA" \
+    MOCK_APPS="${MOCK_APPS:-$GOOD}" \
+    K8P_LOG_DIR="${K8P_LOG_DIR:-$MOCK_DIR/logs}" \
+    timeout 60 bash scripts/opsbox/k8p-bringup.sh "$@" >"$out" 2>&1
+}
+fresh_world() { rm -rf "$MOCK_STATE" "$MOCK_DIR/logs" "$MOCK_DIR/uploaded.log"; : > "$MOCK_DIR/calls"; }
+SPOKE=k8-platform-services
+VIEW=arn:aws:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy
+ADMIN=arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+
+echo "── the box grants itself read access to the spoke after gate 1 ──"
+fresh_world
+MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out1"; rc=$?
+assert_eq "driver: happy path exits 0" 0 "$rc"
+if grep -q "eks create-access-entry --cluster-name $SPOKE " "$MOCK_DIR/calls"; then
+  _pass "spoke: access entry created for the box"
+else
+  _fail "spoke: access entry created for the box" "no create-access-entry for $SPOKE in the recorded calls"
+fi
+if grep -q "eks associate-access-policy --cluster-name $SPOKE .*--policy-arn $VIEW" "$MOCK_DIR/calls"; then
+  _pass "spoke: associated AmazonEKSAdminViewPolicy"
+else
+  _fail "spoke: associated AmazonEKSAdminViewPolicy"
+fi
+if grep -q "eks associate-access-policy --cluster-name $SPOKE .*--policy-arn $ADMIN" "$MOCK_DIR/calls"; then
+  _fail "spoke: never given cluster-admin" "the box asked for AmazonEKSClusterAdminPolicy on the spoke"
+else
+  _pass "spoke: never given cluster-admin"
+fi
+if grep -q "eks associate-access-policy --cluster-name k8-platform-mgmt .*--policy-arn $ADMIN" "$MOCK_DIR/calls"; then
+  _pass "hub: still cluster-admin (default unchanged)"
+else
+  _fail "hub: still cluster-admin (default unchanged)"
+fi
+# ORDER: the grant comes after the last gate-1 read (the spoke exists only then).
+gate1_line="$(grep -n 'xplatformcluster' "$MOCK_DIR/calls" | tail -1 | cut -d: -f1)"
+grant_line="$(grep -n "create-access-entry --cluster-name $SPOKE " "$MOCK_DIR/calls" | head -1 | cut -d: -f1)"
+if [ -n "$gate1_line" ] && [ -n "$grant_line" ] && [ "$grant_line" -gt "$gate1_line" ]; then
+  _pass "spoke: grant happens after gate 1 is confirmed"
+else
+  _fail "spoke: grant happens after gate 1 is confirmed" "gate-1 read at line ${gate1_line:-none}, grant at ${grant_line:-none}"
+fi
+assert_contains "spoke: output says what was granted" "AmazonEKSAdminViewPolicy" "$(grep "$SPOKE" "$MOCK_DIR/out1")"
+
+# Re-running must change nothing and say so.
+: > "$MOCK_DIR/calls"
+MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out2"; rc=$?
+assert_eq "driver: re-run exits 0" 0 "$rc"
+if grep -qE "eks (create-access-entry|associate-access-policy) --cluster-name $SPOKE " "$MOCK_DIR/calls"; then
+  _fail "spoke: re-run makes no access changes" "$(grep -E "eks (create-access-entry|associate-access-policy)" "$MOCK_DIR/calls")"
+else
+  _pass "spoke: re-run makes no access changes"
+fi
+if grep "$SPOKE" "$MOCK_DIR/out2" | grep -q "already present" \
+   && grep "$SPOKE" "$MOCK_DIR/out2" | grep -q "already associated"; then
+  _pass "spoke: re-run reports 'already present' / 'already associated'"
+else
+  _fail "spoke: re-run reports 'already present' / 'already associated'" "$(grep "$SPOKE" "$MOCK_DIR/out2")"
+fi
+
+# No spoke grant before gate 1 is complete.
+fresh_world
+MOCK_FACTS="" MOCK_GATE_OPSTATE="Succeeded $DRIVER_SHA Synced" BUDGET_GATE1=0 \
+  MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out3"; rc=$?
+[ "$rc" -ne 0 ] && _pass "driver: stops when gate 1 is not complete" \
+                || _fail "driver: stops when gate 1 is not complete" "exit $rc"
+if grep -qE "(access-entry|access-policy|access-policies) --cluster-name $SPOKE " "$MOCK_DIR/calls"; then
+  _fail "spoke: no grant attempted before gate 1" "$(grep "$SPOKE" "$MOCK_DIR/calls" | head -2)"
+else
+  _pass "spoke: no grant attempted before gate 1"
+fi
+
+# A failed spoke grant is reported, and does not stop a bring-up that does not
+# need the spoke's API (the driver reads only the hub).
+fresh_world
+mkdir -p "$MOCK_STATE"; touch "$MOCK_STATE/entry-k8-platform-mgmt"
+printf '%s\n' "$ADMIN" > "$MOCK_STATE/policies-k8-platform-mgmt"
+MOCK_ASSOCIATE_RC=254 MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out4"; rc=$?
+assert_eq "driver: a failed spoke grant does not fail the bring-up" 0 "$rc"
+if grep -q "RED.*$SPOKE" "$MOCK_DIR/out4"; then
+  _pass "spoke: a failed grant is reported RED"
+else
+  _fail "spoke: a failed grant is reported RED" "$(grep "$SPOKE" "$MOCK_DIR/out4")"
+fi
+
+# Dry run: says what it would grant on the spoke, grants nothing there.
+fresh_world
+MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out5" --dry-run
+if grep -qE "eks (create-access-entry|associate-access-policy) --cluster-name $SPOKE " "$MOCK_DIR/calls"; then
+  _fail "dry run: no spoke access changes" "$(grep "$SPOKE" "$MOCK_DIR/calls" | head -2)"
+else
+  _pass "dry run: no spoke access changes"
+fi
+assert_contains "dry run: says it would grant the spoke" "would grant" "$(cat "$MOCK_DIR/out5")"
+
+# The box role may manage access entries on the spoke, not only the hub. The
+# spoke is created by Crossplane long after this module is applied, so the
+# statement must not be scoped to the hub's ARN.
+echo "── the box role can grant itself access to every platform cluster ──"
+# tf_statement <sid> — print one statement block of the opsbox policy document.
+tf_statement() {
+  awk -v sid="$1" '
+    /^  statement \{/ { buf=""; depth=0; grab=1 }
+    grab { buf = buf $0 "\n"; line=$0; n=gsub(/\{/,"{",line); m=gsub(/\}/,"}",line); depth += n - m
+           if (depth == 0) { if (buf ~ ("sid += \"" sid "\"")) printf "%s", buf; grab=0 } }
+  ' terraform/opsbox/main.tf
+}
+reach="$(tf_statement ReachTheClusters)"
+for act in eks:CreateAccessEntry eks:AssociateAccessPolicy eks:DescribeAccessEntry eks:ListAssociatedAccessPolicies; do
+  assert_contains "box role: $act" "\"$act\"" "$reach"
+done
+assert_contains "box role: access-entry actions not scoped to the hub" 'resources = ["*"]' "$reach"
 
 # ---------------------------------------------------------------------------
 # Static hygiene
