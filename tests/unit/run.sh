@@ -211,6 +211,11 @@ run_suite tests/unit/test_database_request_runbook.sh
 # that every terraform module is in the validate matrix.
 run_suite tests/unit/test_opsbox_bringup.sh
 
+# kp-2al.42: the installer's kubeconfig + API connectivity script must say
+# FAIL (and exit non-zero) for an unreachable cluster, say so when there are
+# no clusters, and never print a credential.
+run_suite tests/unit/test_k8p_kubeconfig.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated
