@@ -57,4 +57,39 @@ else
   _fail "scoped" "no 'aws sts assume-role ... live-verify' — the suite must run scoped, not as admin"
 fi
 
+# 4. FULL VERDICT (kp-2al.37) — the producer runs every check: mutating for the
+#    full profile, strict skips, the cluster identity wired for checks that
+#    declare it, shared tunnels, and the workflow installs the SSM plugin.
+if printf '%s' "$BODY_TEXT" | grep -qE 'LIVE_STRICT_SKIPS=1'; then
+  _pass "full verdict: strict skips (unregistered skip is a FAIL)"
+else
+  _fail "full_verdict_strict" "producer does not export LIVE_STRICT_SKIPS=1"
+fi
+if printf '%s' "$BODY_TEXT" | grep -qE '^MODE="mutating"' \
+   && printf '%s' "$BODY_TEXT" | grep -qE 'tests/live/run\.sh" "\$MODE"'; then
+  _pass "full verdict: full profile runs mutating"
+else
+  _fail "full_verdict_mutating" "producer does not run tests/live/run.sh in mutating mode for the full profile"
+fi
+if printf '%s' "$BODY_TEXT" | grep -qE 'export LIVE_CLUSTER_AWS_PROFILE=' \
+   && printf '%s' "$BODY_TEXT" | grep -qE 'export LIVE_SHARED_TUNNELS='; then
+  _pass "full verdict: cluster identity + shared tunnels wired"
+else
+  _fail "full_verdict_identity" "producer lacks LIVE_CLUSTER_AWS_PROFILE / LIVE_SHARED_TUNNELS"
+fi
+# The cluster identity is a PROFILE for declared checks — the suite itself still
+# runs under the assumed scoped role (assume-role precedes the run.sh call).
+ar_line="$(grep -nE 'sts[[:space:]]+assume-role' "$BODY" | head -1 | cut -d: -f1)"
+run_line="$(grep -nE 'tests/live/run\.sh"' "$BODY" | head -1 | cut -d: -f1)"
+if [ -n "$ar_line" ] && [ -n "$run_line" ] && [ "$ar_line" -lt "$run_line" ]; then
+  _pass "scoped by default (assume-role precedes run.sh; admin only via the declared profile)"
+else
+  _fail "scoped_by_default" "assume-role must precede the run.sh invocation"
+fi
+if printf '%s' "$WF_TEXT" | grep -qE 'session-manager-plugin'; then
+  _pass "workflow installs the Session Manager plugin (relay)"
+else
+  _fail "workflow_ssm_plugin" "live-verify.yml does not install session-manager-plugin"
+fi
+
 assert_summary

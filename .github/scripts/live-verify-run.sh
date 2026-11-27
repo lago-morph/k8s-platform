@@ -9,6 +9,14 @@
 # and, on a clean pass ONLY, writes the unforgeable live-evidence record the
 # push-time live-evidence gate consumes.
 #
+# FULL VERDICT (kp-2al.37, owner ruling 2026-11-27): the run is MUTATING and
+# STRICT — every check runs, and a skip without a SKIP_REGISTER entry is a FAIL.
+# Checks whose header declares `# live-identity: cluster` (relay + Kubernetes
+# access, Cognito fixture users) run under the job's own credentials via the
+# `live-cluster` AWS profile; the owner chose that identity over widening the
+# scoped role (step 6 bead tracks tightening it). Everything else — the AWS-API
+# checks, the reaper and the account mutex — stays on the scoped role.
+#
 #   GATING : success is run.sh's exit code (set -e, no `|| true`, no `&`).
 #   SCOPED : run.sh runs under `aws sts assume-role` + the required live-verify
 #            session tag (trust demands aws:RequestTag/live-verify).
@@ -23,6 +31,21 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-${RUNNER_TEMP:-/tmp}/live-evidence}"
 CLUSTER="k8-platform-mgmt"   # mgmt cluster name (stable var default, not account-derived)
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+
+# Cluster identity: the job's credentials as a named profile, written to a
+# private temp file BEFORE the env is switched to the scoped role. Never echoed.
+LIVE_AWS_DIR="$(mktemp -d)"; chmod 700 "$LIVE_AWS_DIR"
+export AWS_SHARED_CREDENTIALS_FILE="$LIVE_AWS_DIR/credentials"
+export AWS_CONFIG_FILE="$LIVE_AWS_DIR/config"
+( umask 077
+  printf '[live-cluster]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+    "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" > "$AWS_SHARED_CREDENTIALS_FILE"
+  printf '[profile live-cluster]\nregion = %s\n' "${AWS_DEFAULT_REGION:-us-east-1}" > "$AWS_CONFIG_FILE" )
+trap 'rm -rf "$LIVE_AWS_DIR"' EXIT
+export LIVE_CLUSTER_AWS_PROFILE="live-cluster"
+echo "cluster-access identity: $(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+  AWS_PROFILE=live-cluster aws sts get-caller-identity --query Arn --output text)"
+
 ROLE_ARN="arn:aws:iam::${ACCOUNT}:role/${CLUSTER}-live-verifier-reaper"
 RUN_TAG="gha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
 
@@ -88,11 +111,21 @@ eks.aws.m.upbound.io/Addon
 iam.aws.m.upbound.io/Role
 iam.aws.m.upbound.io/RolePolicyAttachment
 route53.aws.m.upbound.io/Record"
-export LIVE_CLUSTER="$CLUSTER"
+# LIVE_CLUSTER is the cluster UNDER TEST — the platform-services spoke, where the
+# ExternalSecrets, PVCs and workloads live (same as the oracle recipe). The
+# evidence record keeps CLUSTER (the hub) as its key; the gate matches on that.
+export LIVE_CLUSTER="k8-platform-services"
+export LIVE_HUB_CLUSTER="$CLUSTER"
 export LIVE_PROFILE="$PROFILE"
+export LIVE_STRICT_SKIPS=1
+export LIVE_SHARED_TUNNELS="$CLUSTER k8-platform-services"
+export LIVE_PARALLEL="${LIVE_PARALLEL:-8}"
+export AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+MODE="mutating"
+[ "$PROFILE" = "verify-only" ] && MODE="readonly"   # verify-only has nothing to mutate
 
 # GATING: this IS the build's verdict — run.sh's exit code is not swallowed.
-bash "$HERE/tests/live/run.sh" readonly
+bash "$HERE/tests/live/run.sh" "$MODE"
 
 # Evidence is machine-emitted on the clean-pass ONLY (reached only if run.sh
 # exited 0). Schema matches .github/scripts/live-evidence-gate.sh.
