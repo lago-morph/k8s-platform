@@ -27,40 +27,42 @@ variable "cluster_name" {
 }
 
 variable "cluster_version" {
-  description = "Kubernetes version for the management cluster"
+  description = "Kubernetes version for the management (hub) cluster. The single place it is set. Each spoke's version is set in its own XR (spec.version), e.g. clusters/platform/platform-cluster-claim.yaml."
   type        = string
   default     = "1.35"
 }
 
 variable "node_instance_type" {
   description = <<-EOT
-    EC2 instance type for management cluster nodes.
-    Account constraint: t3.medium or smaller (see ai/testing-guidelines.md §1).
-    t3.medium (2 vCPU / 4 GiB) is the recommended minimum for running
-    ArgoCD + Crossplane + ESO on the same node group.
+    EC2 instance type for the nodes of EVERY cluster the platform runs: the
+    hub node group here, and every spoke's NodeGroup, which the
+    platform-cluster Composition reads from the cluster-network
+    EnvironmentConfig (nodeInstanceTypes) that this module writes. This is
+    the single place node types are set; XRs carry no instance type.
+    Account constraint: see ai/testing-guidelines.md §1.
   EOT
   type        = string
-  default     = "t3.medium"
+  default     = "m5.large"
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. 3 nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
+  description = "Desired node count. 2 m5.large nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "node_min_size" {
-  # 3, not 1: the terraform-aws-modules/eks module IGNORES desired_size changes
-  # (autoscaler-friendly), so bumping desired alone is a no-op in the plan. Pin
-  # min_size to force the ASG to the intended 3-node count.
+  # Equal to desired, not 1: the terraform-aws-modules/eks module IGNORES
+  # desired_size changes (autoscaler-friendly), so changing desired alone is a
+  # no-op in the plan. Pin min_size to force the ASG to the intended 2 nodes.
   type    = number
-  default = 3
+  default = 2
 }
 
 variable "node_max_size" {
   description = "Max nodes. The account caps total EC2 instances across all services — stay conservative."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "availability_zones" {

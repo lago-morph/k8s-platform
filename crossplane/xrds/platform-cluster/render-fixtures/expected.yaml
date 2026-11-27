@@ -192,7 +192,7 @@ spec:
       matchLabels:
         platform.k8-platform.io/role: eks-cluster
     instanceTypes:
-      - t3.medium
+      - m5.large
     nodeRoleArnSelector:
       matchControllerRef: true
       matchLabels:
@@ -508,8 +508,6 @@ spec:
   name: render-probe
   nodeGroup:
     desiredSize: 2
-    instanceTypes:
-      - t3.medium
     maxSize: 3
     minSize: 1
   region: us-east-1

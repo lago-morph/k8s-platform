@@ -39,17 +39,16 @@ metadata:
 spec:
   name: k8-platform-services
   region: us-east-1
-  version: "1.32"
+  # The single place this cluster's Kubernetes version is set.
+  version: "1.35"
   dns:
     # Platform services are published at <service>.platform.<domain>; the
     # wildcard ACM cert covers *.platform.<domain>. ExternalDNS on the
     # cluster is scoped to this subdomain.
     subdomain: platform
   nodeGroup:
-    # t3.medium x 2 sized for the 9-instance EC2 quota in this account
-    # (management cluster uses 2 already; this leaves 5 headroom for
-    # workload clusters). Bump after the quota is raised.
-    instanceTypes: ["t3.medium"]
+    # Node count only. The instance type is set once for every cluster:
+    # terraform/management/variables.tf node_instance_type.
     desiredSize: 2
     minSize: 1
     maxSize: 3

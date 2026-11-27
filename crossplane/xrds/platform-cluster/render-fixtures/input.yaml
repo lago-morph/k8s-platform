@@ -29,8 +29,6 @@ spec:
   dns:
     subdomain: platform
   nodeGroup:
-    instanceTypes:
-      - t3.medium
     desiredSize: 2
     minSize: 1
     maxSize: 3

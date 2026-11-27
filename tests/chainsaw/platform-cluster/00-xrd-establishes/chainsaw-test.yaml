@@ -75,11 +75,10 @@ spec:
               spec:
                 name: chainsaw-valid
                 region: us-east-1
-                version: "1.32"
+                version: "1.35"
                 dns:
                   subdomain: platform
                 nodeGroup:
-                  instanceTypes: ["t3.medium"]
                   desiredSize: 2
                   minSize: 1
                   maxSize: 3
@@ -103,6 +102,7 @@ spec:
               spec:
                 name: chainsaw-bad
                 region: NOT-A-REGION
+                version: "1.35"
                 dns:
                   subdomain: platform
               YAML
@@ -130,12 +130,39 @@ spec:
               spec:
                 name: chainsaw-nodns
                 region: us-east-1
+                version: "1.35"
               YAML
               then
                 echo "FAIL: claim without dns was accepted"
                 exit 1
               fi
               grep -qE "spec\.dns|required" /tmp/err.log
+
+    - name: assert a missing-version claim is REJECTED
+      # version is required with no default: each cluster's Kubernetes
+      # version is set in exactly one place, its own XR. Omitting it must
+      # fail at admission rather than silently pick up a default.
+      try:
+        - script:
+            content: |
+              set -eu
+              if kubectl apply --dry-run=server -f - <<'YAML' 2>/tmp/err.log
+              apiVersion: platform.k8-platform.io/v1alpha1
+              kind: XPlatformCluster
+              metadata:
+                name: schema-invalid-noversion
+                namespace: default
+              spec:
+                name: chainsaw-noversion
+                region: us-east-1
+                dns:
+                  subdomain: platform
+              YAML
+              then
+                echo "FAIL: claim without version was accepted"
+                exit 1
+              fi
+              grep -q "spec.version" /tmp/err.log
   # SPEC-A4 canonical catch block — keep in sync with
   # tests/chainsaw/_lib/catch-block.yaml (enforced by
   # tests/unit/test_chainsaw_catch_block.sh).

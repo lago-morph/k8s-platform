@@ -30,14 +30,13 @@ metadata:
 spec:
   name: k8-platform-workload1
   region: us-east-1
-  version: "1.32"
+  version: "1.35"
   dns:
     # DNS label for this cluster: services land at
     # <service>.workload1.<domain>; the wildcard ACM cert covers
     # *.workload1.<domain>.
     subdomain: workload1
   nodeGroup:
-    instanceTypes: ["t3.medium"]
     desiredSize: 2
     minSize: 1
     maxSize: 3

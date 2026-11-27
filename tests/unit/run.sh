@@ -71,6 +71,7 @@ run_suite tests/unit/test_platform_secret_xrd.sh
 run_suite tests/unit/test_platform_secret_composition.sh
 run_suite tests/unit/test_platform_cluster_xrd.sh
 run_suite tests/unit/test_platform_cluster_composition.sh
+run_suite tests/unit/test_cluster_config_single_source.sh
 # Phase-5: the composed OIDC IdentityProviderConfig's claim contract
 # (REQ-AUTH-07 — clientId/claims/kc: prefixes/issuer combine).
 run_suite tests/unit/test_platform_cluster_oidc_idp.sh

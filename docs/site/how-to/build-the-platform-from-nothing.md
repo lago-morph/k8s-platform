@@ -67,7 +67,7 @@ click buttons and read one word.
 |---|---|---|
 | A fresh AWS account you can use freely | The build creates real, billed infrastructure | You |
 | **One public Route53 hosted zone** in that account | The build discovers your domain from it and derives every hostname. It never registers a domain for you. | You, or the sandbox that issued the account |
-| Room for at least **7** EC2 instances | The hub runs 3 nodes, the spoke 2, the diagnostic relay 1, and the ops box is the seventh. A sandbox account's 9-instance cap leaves two spare | Account quota |
+| Room for at least **6** EC2 instances, and permission to launch `m5.large` | The hub runs 2 `m5.large` nodes, the spoke 2 `m5.large`, the diagnostic relay 1 `t3.nano`, and the ops box is the sixth (`t3.small`). A sandbox account's 9-instance cap leaves three spare | Account quota |
 | Permission to run workflows in this repository | Every build action is a `workflow_dispatch` run | Repository access |
 | Permission to open Session Manager in the AWS console | That is how you reach the ops box | The account's console sign-in |
 
