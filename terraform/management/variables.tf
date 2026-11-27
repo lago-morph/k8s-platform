@@ -29,7 +29,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the management (hub) cluster. The single place it is set. Each spoke's version is set in its own XR (spec.version), e.g. clusters/platform/platform-cluster-claim.yaml."
   type        = string
-  default     = "1.35"
+  default     = "1.37"
 }
 
 variable "control_plane_log_retention_days" {

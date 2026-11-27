@@ -8,7 +8,7 @@ domain          = "example.com"      # must match terraform/base; auto-discovere
 tf_state_bucket = "my-tfstate-bucket" # auto-derived in CI from account ID
 
 cluster_name    = "k8-platform-mgmt"
-cluster_version = "1.35"
+cluster_version = "1.37"
 
 # Pluralsight sandbox: m5.large is the recommended type (see ai/testing-guidelines.md).
 # Keep these equal to terraform/management/variables.tf defaults.

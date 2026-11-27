@@ -44,7 +44,7 @@ spec:
   name: k8-platform-workload1
   region: us-east-1
   # The single place this cluster's Kubernetes version is set.
-  version: "1.35"
+  version: "1.37"
   dns:
     # Workload1 services are published at <service>.workload1.<domain>; the
     # wildcard ACM cert covers *.workload1.<domain>. ExternalDNS on the cluster

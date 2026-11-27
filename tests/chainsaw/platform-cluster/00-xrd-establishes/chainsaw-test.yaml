@@ -75,7 +75,7 @@ spec:
               spec:
                 name: chainsaw-valid
                 region: us-east-1
-                version: "1.35"
+                version: "1.37"
                 dns:
                   subdomain: platform
                 nodeGroup:
@@ -102,7 +102,7 @@ spec:
               spec:
                 name: chainsaw-bad
                 region: NOT-A-REGION
-                version: "1.35"
+                version: "1.37"
                 dns:
                   subdomain: platform
               YAML
@@ -130,7 +130,7 @@ spec:
               spec:
                 name: chainsaw-nodns
                 region: us-east-1
-                version: "1.35"
+                version: "1.37"
               YAML
               then
                 echo "FAIL: claim without dns was accepted"
