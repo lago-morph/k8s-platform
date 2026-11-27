@@ -1,5 +1,5 @@
 ---
-status: contract
+status: stable
 ---
 
 # Build the platform from nothing
@@ -33,15 +33,21 @@ click buttons and read one word.
     from-scratch builds proved the platform itself (`SUBSTRATE-READINESS.md`,
     with run IDs). Build #9 (2026-09-12, a fresh account) was the first
     driven **by the ops box and this script**, and the run IDs and
-    durations quoted below come from it. Two things remain
-    **unverified**, and both are marked in place:
+    durations quoted below come from it.
 
-    - the browser shell has been reached only through the same AWS
-      Systems Manager channel the console uses (`send-command`), not by a
-      person clicking **Connect** in the console;
-    - **no person has executed this page as written.** A human walking
-      it end to end on a fresh account, with no other context, is what
-      flips its marker from `contract` to `stable` (bead `kp-2al.10`).
+    **A person has executed this page as written**, end to end, on a
+    fresh account (2026-11-27; Live verify run 45955338643), which is
+    what moved its marker from `contract` to `stable` (bead `kp-2al.10`).
+    That run also verified the browser shell the way this page uses it:
+    **Start session** from the console landed as `uid=1001(ssm-user)` in
+    the repository checkout.
+
+    The run found one divergence: the ops box's console URL printed as
+    `https://***.console.aws.amazon.com/…?region=***`, because the region
+    was then a repository *secret* and GitHub masks secrets in logs. The
+    region is now a repository **variable** (step 0) and the URL is
+    printed in clear. That fix is **pending clean-build verification**:
+    no build has yet printed the new URL.
 
     Where nobody has run something, this page says **unverified** on the
     spot rather than implying proof.
@@ -79,18 +85,34 @@ If the account has **more than one** public hosted zone, the build takes
 the first one the Route53 API returns. Leave exactly one in a fresh
 account so there is nothing to guess.
 
-### The three repository secrets
+### The two repository secrets
 
 Set these once per account, in the repository's
-**Settings → Secrets and variables → Actions → New repository secret**:
+**Settings → Secrets and variables → Actions → Secrets → New repository secret**:
 
 | Secret | Value |
 |---|---|
 | `AWS_ACCESS_KEY_ID` | Access key for an identity with administrative rights in the account |
 | `AWS_SECRET_ACCESS_KEY` | Its secret |
+
+### The one repository variable
+
+Set this once, in the repository's
+**Settings → Secrets and variables → Actions → Variables → New repository variable**:
+
+| Variable | Value |
+|---|---|
 | `AWS_REGION` | The region to build in, e.g. `us-east-1` |
 
-These are the **only** credentials anywhere in the procedure, and they
+The region is a **variable, not a secret**, on purpose. GitHub masks
+every secret's value as `***` wherever it appears in a run log, so a
+region stored as a secret turns the ops box's console URL into
+`https://***.console.aws.amazon.com/…?region=***`, which opens nothing.
+If the variable is missing, every workflow that talks to AWS stops at
+its first step, **Require the AWS_REGION repository variable**, with a
+message saying exactly that; none of them guesses a region.
+
+The two secrets are the **only** credentials anywhere in the procedure, and they
 live in GitHub, not on your machine. Nothing else is configured by
 hand: the workflows bootstrap their own Terraform state bucket and lock
 table from the account ID, discover the hosted zone and derive the
@@ -193,6 +215,8 @@ present.
 
 What a *real* problem looks like in this run:
 
+- **Require the AWS_REGION repository variable** fails: the variable is
+  not set, or is not a region name. Set it (step 0) and dispatch again.
 - **State backend** fails on `InvalidClientTokenId` or `AccessDenied`:
   the secrets are wrong, missing, or belong to a dead account. Fix the
   secrets; do not continue.
@@ -228,11 +252,10 @@ green, the build stages red, `NOT COMPLETE`. Everything this screen
 says is a live read against AWS or the cluster; nothing on it is a
 cached workflow result.
 
-*Unverified:* build #9 reached the box through the same Systems
-Manager channel, but by sending commands to it rather than by a person
-pressing **Start session** in the console. If the session opens as a
-user other than `ssm-user` or does not land in the checkout, that is a
-finding to report (step 6), not something to fix in place.
+*Verified* by a person on 2026-11-27: **Start session** from the console
+opened as `uid=1001(ssm-user)` in the repository checkout. If yours opens
+as a different user or does not land in the checkout, that is a finding
+to report (step 6), not something to fix in place.
 
 ## 3. Drive the bring-up
 
@@ -581,16 +604,19 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://hello.platform.<domain>/
 
 *Tracking: bead `kp-2al.34` (the ops box and the scripts, and this
 page's rewrite around them), `kp-2al.10` (the human-executed bring-up
-this page is written for, and the only thing that flips its marker to
-`stable`), `kp-2al.15` (this page's declaration of the supported path),
-`OI-2026-07-06-4` (no human-executed bring-up yet). Decisions:
+this page is written for, done 2026-11-27, which flipped its marker to
+`stable`), `kp-2al.36` (the console URL masked by a region held as a
+secret), `kp-2al.15` (this page's declaration of the supported path),
+`OI-2026-07-06-4` (no human-executed bring-up; the 2026-11-27 run is the first). Decisions:
 ADR-0017 (bring-up is a user-facing product surface), ADR-0018
 (documentation is verified by fenced execution), ADR-0010 (cluster
 facts ride the registration Secret), ADR-0008 (the SSM relay is
 implementation-time only), ADR-0006 (behavioral verification coupled to
 the build is the oracle). Reference runs, build #9, 2026-09-12, fresh
 account: ops box 34673149665, base 34673406430, management 34673599867,
-live verify 34676173964, gate SHA `b41f48cdc0e7a532da4c69305d41133bf822e541`. Earlier evidence: clean
+live verify 34676173964, gate SHA `b41f48cdc0e7a532da4c69305d41133bf822e541`.
+Human-executed run, 2026-11-27, fresh account: ops box 45939416156,
+live verify 45955338643. Earlier evidence: clean
 builds #6, #7 and #8 (`SUBSTRATE-READINESS.md`), whose corrections
 (`kp-2al.23`, `kp-2al.24`, `kp-2al.25`, `kp-2al.26`) the script encodes.
 Lesson L37 is why the gates sync at an explicit SHA.*

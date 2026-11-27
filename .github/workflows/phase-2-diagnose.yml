@@ -27,10 +27,15 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
     steps:
       - uses: actions/checkout@v4
+
+      # kp-2al.36: the region is the AWS_REGION repository VARIABLE (a secret
+      # would be masked as *** in every log line). Unset => fail here, loudly.
+      - name: Require the AWS_REGION repository variable
+        run: .github/scripts/require-aws-region.sh
 
       - name: Configure kubectl
         run: |

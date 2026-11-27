@@ -38,8 +38,8 @@ env:
   TF_IN_AUTOMATION: "true"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-  TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+  AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
 
 jobs:
   opsbox:
@@ -53,6 +53,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # kp-2al.36: the region is the AWS_REGION repository VARIABLE (a secret
+      # would be masked as *** in every log line). Unset => fail here, loudly.
+      - name: Require the AWS_REGION repository variable
+        run: .github/scripts/require-aws-region.sh
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -207,13 +212,24 @@ jobs:
       - name: How to reach it
         if: inputs.action == 'apply' || inputs.action == 'verify'
         working-directory: terraform/opsbox
+        # The URL embeds the region (hostname and ?region=), which comes from
+        # the AWS_REGION repository VARIABLE via TF_VAR_aws_region. When it
+        # was a secret, GitHub masked it and this printed
+        # https://***.console.aws.amazon.com/...?region=*** (kp-2al.36). The
+        # shape check below refuses to hand a person a URL with no region.
         run: |
           set -euo pipefail
+          URL="$(terraform output -raw console_url)"
+          [ -n "${AWS_DEFAULT_REGION:-}" ] || { echo "::error::no region: set the AWS_REGION repository variable"; exit 1; }
+          case "$URL" in
+            "https://${AWS_DEFAULT_REGION}.console.aws.amazon.com/"*"?region=${AWS_DEFAULT_REGION}") ;;
+            *) echo "::error::console URL does not carry the region '${AWS_DEFAULT_REGION}' (got: $URL)"; exit 1 ;;
+          esac
           echo "─────────────────────────────────────────────────────────────"
           echo "Open this in the AWS console — it is a browser shell, so you"
           echo "need no local tools and no credentials on your machine:"
           echo
-          terraform output -raw console_url
+          echo "$URL"
           echo
           echo
           echo "Then run:   k8p-status.sh     (where is the platform?)"

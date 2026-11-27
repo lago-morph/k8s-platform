@@ -40,7 +40,7 @@ env:
   # NOT run the live suite — that is terraform-test.yml under the scoped role.
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+  AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
 
 jobs:
   verify:
@@ -82,6 +82,11 @@ jobs:
 
           # The management (hub) cluster name — a stable variable default, NOT an
           # account-derived value (AGENTS §8.1). The producer emits the same name.
+          # kp-2al.36: AWS work starts here, so the AWS_REGION repository
+          # variable must be set (after the profile=none exit, so a change set
+          # with no live surface never needs it).
+          .github/scripts/require-aws-region.sh
+
           CLUSTER="k8-platform-mgmt"
           ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 
