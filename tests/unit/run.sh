@@ -29,6 +29,7 @@ run_suite() {
 
 # L31: cross-file version-pin pairs held equal (argo chart/app pin etc.)
 run_suite tests/unit/test_version_pin_consistency.sh
+run_suite tests/unit/test_nlb_tls_policy.sh
 run_suite tests/unit/test_compute_gates.sh
 run_suite tests/unit/test_irsa_helm_linkage.sh
 run_suite tests/unit/test_argocd_controller_irsa.sh
