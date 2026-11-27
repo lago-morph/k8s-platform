@@ -240,6 +240,10 @@ run_suite tests/unit/test_eks_addons_pinned.sh
 # when Argo CD cannot be moved, and must never print the password unasked.
 run_suite tests/unit/test_argocd_admin_password_source.sh
 run_suite tests/unit/test_argocd_password_script.sh
+# kp-2al.52: the live check that the ASM-stored Argo CD admin password
+# actually logs in (pass / refused / secret missing / no zone / no hub), and
+# never leaks the password into output or argv.
+run_suite tests/unit/test_argocd_admin_password_live.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
