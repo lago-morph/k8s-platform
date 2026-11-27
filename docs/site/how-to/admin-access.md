@@ -400,9 +400,15 @@ blank certificate ARN.
 
 The directory path this platform documents — sign in with a directory
 account, land in a Kubernetes group, use `kubectl` through OIDC — needs
-an account to exist. **Nothing in a build creates one.** The federation
-oracle creates an ephemeral fixture user, proves the whole chain with it,
-and its reaper deletes it again, so after a fresh build neither you nor
+an account to exist. **No build leaves a usable one.** Every build
+does create `ci-test@<domain>` (the base Terraform's
+`aws_cognito_user.test`, fed by credentials the build workflow
+generates), but nobody can sign in with it: its temporary password is
+generated inside the CI run and handed to no one, the account stays in
+`FORCE_CHANGE_PASSWORD` state, and it is in no group. It exists so the
+build can check that the pool accepts a user. The federation oracle's
+fixture user is ephemeral too: the oracle proves the whole chain with it
+and its reaper deletes it again. So after a fresh build neither you nor
 a person following
 [kubectl via directory group](kubectl-access-via-directory-group.md)
 has anything to sign in with until you create it.
@@ -493,8 +499,8 @@ page. To take access away, `remove` the account.
 | No AWS-IAM admin access entry for a named human on the spoke | Spoke admin is only reachable through the directory group, or through the hub's Argo CD role |
 | Hub admin belongs to whichever identity applied the Terraform (plus the ops box's role) | If the platform was built with other credentials, your own may not be an admin there |
 | Argo CD has no SSO | The shared local `admin` account is the only login |
-| Argo CD browser sign-in has never been exercised | Every attestation is via the `argocd` CLI or `kubectl`; the browser experience is unverified (`kp-2al.29`) |
-| No build creates a durable directory account | Section 4 is the admin doing it by hand on request; a composed or self-service account is a v2.0 item (`kp-2al.29`) |
+| Argo CD browser sign-in (the local `admin` login; there is no Argo CD SSO) has never been exercised | Every attestation is via the `argocd` CLI or `kubectl`; the browser experience is unverified (`kp-2al.29`) |
+| No build creates a usable directory account | Section 4 is the admin doing it by hand on request; a composed or self-service account is a v2.0 item (`kp-2al.29`) |
 | Changing the Argo CD password is scripted but unverified | `k8p-argocd-password.sh set [--generate]` exists and is unit-tested; no build or person has run it |
 | The three admin scripts have not run against a live build | `k8p-kubeconfig.sh`, `k8p-cognito-user.sh` and `k8p-argocd-password.sh` are unit-tested against stubs only |
 | The Argo CD URL's certificate is not verified by the build | "Reachable" is attested; "valid public certificate" is not |
@@ -503,8 +509,9 @@ page. To take access away, `remove` the account.
 
 ---
 
-*Tracking: beads `kp-2al.6` (this page) and `kp-2al.39` (public
-endpoints, the admin's own directory login, the scripts). Decisions
+*Tracking: beads `kp-2al.6` (this page), `kp-2al.39` (public
+endpoints, the admin's own directory login, the scripts) and
+`kp-2al.40` (the `ci-test` account wording). Decisions
 referenced: ADR-0008 (the SSM relay is implementation-time only),
 ADR-0010 (cluster facts ride the registration Secret), ADR-0017
 (platform bring-up and administration are user-facing surfaces).*
