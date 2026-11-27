@@ -30,6 +30,7 @@ All scripts:
 | `irsa_trust_validator.py` | IRSA trust-policy vs SA fleet sweep; `--all --ci` for gating, `--role <arn>` for targeted triage. |
 | `wait-for-claim.sh` | Polls a Crossplane claim's `Ready=True`; dumps conditions+events on timeout (SPEC-S7). |
 | `crossplane-trace.sh` | Walks claim → XR → managed-resources → IRSA → atProvider, printing `.status.conditions` at every layer; `--watch` for live re-print, `--json` for snapshot diffing (SPEC-S2). |
+| `k8p-cognito-user.sh` | **Mutating (directory only).** Add (`--group k8s-admins\|k8s-viewers`), remove, or list platform directory (Cognito) users; pool discovered from `k8-platform/base/cognito`; prints a verification read after every change. Also on the ops-box PATH via `scripts/opsbox/`. |
 
 Shared helpers (sourced, not executed): `_lib/k8s-helpers.sh` (introduced
 by SPEC-S7) holds read-only kubectl helpers consumed by `wait-for-claim.sh`
