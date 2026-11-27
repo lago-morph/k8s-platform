@@ -48,6 +48,35 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ## The readiness checklist
 
+**Clean build #10 — 2026-11-27, a NEW account (`637423636571`), the <!-- noqa: account-id - run provenance, account rotates -->
+OWNER's bring-up**
+**(tenth from-scratch build; the first executed by a PERSON following
+`docs/site/how-to/build-the-platform-from-nothing.md` as written — kp-2al.10.
+Single SHA for the platform and the driver: `main`
+`35eee974c79fbe0c49359352f44a03aced3ddce4`.)**
+Region us-east-1; hub 3× t3.medium, spoke 2× t3.medium, spoke Kubernetes
+1.32 (this build predates PR #277).
+Build chain: Ops box **45939416156** `apply` → browser shell opened by the
+owner from the console, landing as `uid=1001(ssm-user)` in the checkout
+(the page's last unverified step, now verified) → base **45940909805** →
+management **45941267372** → `k8p-bringup.sh` BRING-UP COMPLETE at
+06:57:31Z, gate SHA `35eee97`, hello HTTP 200 with the expected body →
+Live verify **45955338643** (old producer: `pass=17 skip=12 fail=0`) → the
+12 skipped checks run by the owner with the owner's own credentials in mutating
+mode, RUN_ID `owner-1127-0715`: **12/12 PASS** (ExternalSecrets 3/3 Ready,
+spoke registration contract, hub Argo CD Synced/Healthy for hello and
+Keycloak, relay kubectl 2 Ready nodes, gp3 default + 3/3 PVCs Bound,
+Cognito→Keycloak→kubectl federation, IAM Role and ASM Secret instantiate
+with settled deletion, all three guards fired with positive controls).
+**All 29 behaviours verified on one build** — the first since build #7.
+Then Live verify with the NEW full-verdict producer (PR #278, before merge)
+on the same platform: **45959888007** at `ee427fc`, `pass=29 skip=0
+fail=0 expect-full-violations=0`, 1m36s; **45960453458** after PR #277
+merged to `main`: `pass=29 skip=0`.
+**Finding:** the ops box's console URL printed `***` for the region
+(GitHub masks the `AWS_REGION` secret) — kp-2al.36.
+**Teardown:** none; the sandbox account timed out the same day.
+
 **Clean build #9 — 2026-09-12, a NEW account (`851725259254`), nothing in <!-- noqa: account-id - run provenance, account rotates -->
 it but the pre-existing hosted zone**
 **(ninth from-scratch build; the OPS-BOX build — the first driven by the
