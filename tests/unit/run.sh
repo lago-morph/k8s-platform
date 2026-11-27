@@ -234,6 +234,11 @@ run_suite tests/unit/test_control_plane_logging.sh
 # cluster-network EnvironmentConfig -> every composed Addon, Required); none
 # floats, and the kube-proxy pin matches every cluster's Kubernetes minor.
 run_suite tests/unit/test_eks_addons_pinned.sh
+# kp-2al.44: AWS Secrets Manager is authoritative for the Argo CD admin
+# password. Terraform must seed it once (ignore_changes) and apply what ASM
+# holds, never re-impose random_password; the change script must roll ASM back
+# when Argo CD cannot be moved, and must never print the password unasked.
+run_suite tests/unit/test_argocd_admin_password_source.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
