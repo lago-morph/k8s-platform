@@ -146,6 +146,28 @@ data "aws_iam_policy_document" "opsbox" {
     resources = ["*"]
   }
 
+  # k8p-bringup.sh copies its own log into the state bucket at the end of every
+  # run, so the record outlives the box (kp-2al.51). Write access is to that
+  # prefix alone: the box must never be able to touch Terraform state.
+  statement {
+    sid       = "KeepBringUpLogs"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["arn:aws:s3:::k8-platform-tfstate-${data.aws_caller_identity.current.account_id}/k8p-bringup/*"]
+  }
+
+  # `aws logs tail` (FilterLogEvents) over the EKS control-plane log groups,
+  # /aws/eks/<cluster>/cluster, for hub and spokes (kp-2al.51).
+  statement {
+    sid     = "SearchClusterLogs"
+    effect  = "Allow"
+    actions = ["logs:FilterLogEvents"]
+    resources = [
+      "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/eks/*",
+      "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/eks/*:*",
+    ]
+  }
+
   # The platform's own secrets namespace, for the Cognito bridge document the
   # directory-account step reads. Scoped to the platform's prefix.
   statement {

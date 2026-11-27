@@ -346,7 +346,8 @@ leave them:
 | You do not know | **Keep them**, and tell whoever builds next that the probe's state-backend checks will pass |
 
 Deleting them is irreversible, and it discards the Terraform state for a
-platform you have just destroyed.
+platform you have just destroyed, along with the ops box bring-up logs
+under its `k8p-bringup/` prefix (download them first if you want them).
 
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

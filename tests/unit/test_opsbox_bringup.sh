@@ -399,6 +399,90 @@ else
 fi
 assert_contains "dry run: says it would grant the spoke" "would grant" "$(cat "$MOCK_DIR/out5")"
 
+echo "── the driver keeps its log, locally and in the state bucket ──"
+BUCKET_PREFIX="s3://k8-platform-tfstate-123456789012/k8p-bringup/"
+fresh_world
+MOCK_UPLOADED="$MOCK_DIR/uploaded.log" MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out6"; rc=$?
+assert_eq "log: happy run still exits 0" 0 "$rc"
+logf="$(ls "$MOCK_DIR"/logs/*.log 2>/dev/null | head -1)"
+if [ -n "$logf" ] && grep -q "BRING-UP COMPLETE" "$logf"; then
+  _pass "log: the run's output is kept on the box"
+else
+  _fail "log: the run's output is kept on the box" "no log with the run's output under $MOCK_DIR/logs"
+fi
+if grep -q "aws s3 cp .*${BUCKET_PREFIX}$(basename "${logf:-none}")" "$MOCK_DIR/calls"; then
+  _pass "log: copied to the state bucket under k8p-bringup/"
+else
+  _fail "log: copied to the state bucket under k8p-bringup/" "$(grep 's3 cp' "$MOCK_DIR/calls")"
+fi
+# The copy must happen after the log is complete, not while tee still holds it.
+if [ -f "$MOCK_DIR/uploaded.log" ] && grep -q "BRING-UP COMPLETE" "$MOCK_DIR/uploaded.log" \
+   && grep -q "Run workflow   (branch main, profile full)" "$MOCK_DIR/uploaded.log"; then
+  _pass "log: the uploaded copy is the whole run"
+else
+  _fail "log: the uploaded copy is the whole run"
+fi
+assert_contains "log: prints the S3 URI" "$BUCKET_PREFIX" "$(cat "$MOCK_DIR/out6")"
+
+# A failed run is the one most worth keeping.
+fresh_world
+MOCK_FACTS="" MOCK_GATE_OPSTATE="Succeeded $DRIVER_SHA Synced" BUDGET_GATE1=0 \
+  MOCK_UPLOADED="$MOCK_DIR/uploaded.log" MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out7"; rc=$?
+assert_eq "log: a failed run keeps its exit code" 1 "$rc"
+if grep -q "aws s3 cp .*${BUCKET_PREFIX}" "$MOCK_DIR/calls" && grep -q "STOPPED" "$MOCK_DIR/uploaded.log" 2>/dev/null; then
+  _pass "log: a failed run is copied too"
+else
+  _fail "log: a failed run is copied too"
+fi
+
+# Ctrl-C mid-wait (SIGINT to the whole process group, tee included) must still
+# leave a complete log and copy it. python restores default SIGINT, which a
+# backgrounded non-interactive shell would otherwise ignore.
+if command -v python3 >/dev/null 2>&1; then
+  fresh_world
+  sig_rc="$(PATH="$MOCK_DIR:$PATH" NO_COLOR=1 MOCK_FACTS="" MOCK_BOOTSTRAP="$DRIVER_SHA" \
+    MOCK_GATE_OPSTATE="Succeeded $DRIVER_SHA Synced" MOCK_UPLOADED="$MOCK_DIR/uploaded.log" \
+    MOCK_CALLS="$MOCK_DIR/calls" K8P_LOG_DIR="$MOCK_DIR/logs" python3 -I -c '
+import os, signal, subprocess, sys, time
+p = subprocess.Popen(["bash", "scripts/opsbox/k8p-bringup.sh"], stdout=open(sys.argv[1], "w"),
+    stderr=subprocess.STDOUT, start_new_session=True,
+    preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+time.sleep(3)
+os.killpg(p.pid, signal.SIGINT)
+print(p.wait(timeout=30))
+' "$MOCK_DIR/out-int" 2>&1)"
+  assert_eq "log: Ctrl-C exits 130" 130 "$sig_rc"
+  if grep -q "run ended .*exit 130" "$MOCK_DIR/uploaded.log" 2>/dev/null; then
+    _pass "log: Ctrl-C still copies the complete log"
+  else
+    _fail "log: Ctrl-C still copies the complete log" "$(tail -2 "$MOCK_DIR/uploaded.log" 2>&1)"
+  fi
+else
+  echo "  (python3 not installed — skipping the Ctrl-C case)"
+fi
+
+# A failed copy is reported and never fails the bring-up.
+fresh_world
+MOCK_S3_CP_RC=1 MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out8"; rc=$?
+assert_eq "log: a failed copy does not fail the bring-up" 0 "$rc"
+assert_contains "log: a failed copy says why" "AccessDenied" "$(grep -i 'not copied' "$MOCK_DIR/out8")"
+
+# Dry run: kept locally, not copied, and says so.
+fresh_world
+MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out9" --dry-run
+if grep -q "aws s3 cp" "$MOCK_DIR/calls"; then
+  _fail "log: dry run copies nothing" "$(grep 's3 cp' "$MOCK_DIR/calls")"
+else
+  _pass "log: dry run copies nothing"
+fi
+assert_contains "log: dry run says it did not copy" "not copied" "$(cat "$MOCK_DIR/out9")"
+
+# An unwritable log directory is reported and the bring-up still runs.
+fresh_world
+K8P_LOG_DIR=/proc/k8p-cannot-exist MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out10"; rc=$?
+assert_eq "log: an unwritable log dir does not fail the bring-up" 0 "$rc"
+assert_contains "log: an unwritable log dir is reported" "log not kept" "$(cat "$MOCK_DIR/out10")"
+
 # The box role may manage access entries on the spoke, not only the hub. The
 # spoke is created by Crossplane long after this module is applied, so the
 # statement must not be scoped to the hub's ARN.
@@ -416,6 +500,22 @@ for act in eks:CreateAccessEntry eks:AssociateAccessPolicy eks:DescribeAccessEnt
   assert_contains "box role: $act" "\"$act\"" "$reach"
 done
 assert_contains "box role: access-entry actions not scoped to the hub" 'resources = ["*"]' "$reach"
+
+# kp-2al.51: the box may write ONLY its bring-up logs into the state bucket,
+# and may search ONLY the EKS control-plane log groups.
+echo "── the box role can keep its log and search EKS logs, and no more ──"
+logs_stmt="$(tf_statement KeepBringUpLogs)"
+assert_contains "box role: s3:PutObject for bring-up logs" '"s3:PutObject"' "$logs_stmt"
+# shellcheck disable=SC2016  # a literal Terraform interpolation
+assert_contains "box role: PutObject scoped to the state bucket's k8p-bringup/ prefix" \
+  'arn:aws:s3:::k8-platform-tfstate-${data.aws_caller_identity.current.account_id}/k8p-bringup/*' "$logs_stmt"
+search_stmt="$(tf_statement SearchClusterLogs)"
+assert_contains "box role: logs:FilterLogEvents" '"logs:FilterLogEvents"' "$search_stmt"
+assert_contains "box role: FilterLogEvents scoped to /aws/eks/* log groups" \
+  ':log-group:/aws/eks/*' "$search_stmt"
+# Neither write nor search may ride along in a Resource "*" statement.
+wide="$(grep -c '"s3:PutObject"\|"logs:FilterLogEvents"' terraform/opsbox/main.tf)"
+assert_eq "box role: PutObject and FilterLogEvents each granted exactly once" 2 "$wide"
 
 # ---------------------------------------------------------------------------
 # Static hygiene

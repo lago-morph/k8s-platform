@@ -143,10 +143,15 @@ kc() {
 # account: ask the world, not the workflow.
 STATE_TABLE="${STATE_TABLE:-k8-platform-tfstate-lock}"
 
+# The state bucket's name is account-derived, exactly as the workflows make it.
+state_bucket() {
+  acct="$(account_id)"; [ -n "$acct" ] || return 1
+  printf 'k8-platform-tfstate-%s\n' "$acct"
+}
+
 state_settled() {
   phase="$1"
-  acct="$(account_id)"; [ -n "$acct" ] || return 1
-  bucket="k8-platform-tfstate-${acct}"
+  bucket="$(state_bucket)" || return 1
   key="k8-platform/${phase}/terraform.tfstate"
   n="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix "$key" \
        --query "length(Contents[?Key=='${key}'] || \`[]\`)" --output text 2>/dev/null)"

@@ -24,6 +24,66 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
+# ---------------------------------------------------------------------------
+# Keep this run's log (kp-2al.51)
+# ---------------------------------------------------------------------------
+# The terminal is the only other copy, and it dies with the browser tab or the
+# box. So everything below is tee'd to a file in the operator's home (the
+# Session Manager shell runs as ssm-user, who cannot write /var/log), and at
+# exit — success, failure or interrupt — the file is copied to the state
+# bucket under k8p-bringup/. The copy is best-effort: reported, never allowed
+# to fail the bring-up. The logs go when the state bucket is deleted
+# (tear-the-platform-down.md).
+LOG_DIR="${K8P_LOG_DIR:-$HOME/k8p-bringup}"
+LOG_FILE="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ).log"
+LOG_PID=""
+if mkdir -p "$LOG_DIR" 2>/dev/null && : > "$LOG_FILE" 2>/dev/null; then
+  exec 3>&1 4>&2
+  # Ctrl-C, a closed browser tab (SIGHUP) or a kill reaches the whole process
+  # group. tee ignores them (-i for INT: bash re-defaults SIGINT in a process
+  # substitution) and outlives a dead terminal (--output-error=warn),
+  # so the EXIT trap can still close and copy a complete log.
+  exec > >(trap '' INT TERM HUP PIPE; exec tee -i --output-error=warn -a "$LOG_FILE") 2>&1
+  LOG_PID=$!
+else
+  info "log not kept: cannot write $LOG_FILE (set K8P_LOG_DIR to a writable directory)"
+  LOG_FILE=""
+fi
+
+# finish_log — the EXIT trap: close the tee so the file is complete, copy it.
+finish_log() {
+  rc=$?
+  trap - EXIT
+  trap '' INT TERM HUP PIPE   # finish the copy even if the terminal is gone
+  printf '\n'; info "run ended $(date -u +%FT%TZ), exit $rc"
+  exec 1>&3 2>&4 3>&- 4>&-
+  # tee exits on EOF; wait for it so nothing is still unwritten when we copy.
+  wait "$LOG_PID" 2>/dev/null || true
+  # Copy first, report after: the uploaded copy ends with "run ended".
+  if [ "$DRY_RUN" -eq 1 ]; then
+    copied="$(info "log not copied to S3: dry run")"
+  elif ! bucket="$(state_bucket)"; then
+    copied="$(red "log not copied to S3: no AWS identity, so the state bucket is unknown")"
+  else
+    uri="s3://${bucket}/k8p-bringup/${LOG_FILE##*/}"
+    if err="$(aws s3 cp "$LOG_FILE" "$uri" --only-show-errors 2>&1)"; then
+      copied="$(green "log copied to $uri")"
+    else
+      copied="$(red "log not copied to S3 ($uri): $(first_line_of "$err")")"
+    fi
+  fi
+  { info "log kept on this box: $LOG_FILE"; printf '%s\n' "$copied"; } \
+    | tee --output-error=warn -a "$LOG_FILE"
+  exit "$rc"
+}
+if [ -n "$LOG_FILE" ]; then
+  trap finish_log EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  info "logging this run to $LOG_FILE"
+fi
+
 WORKFLOW_UI="https://github.com/lago-morph/k8s-platform/actions/workflows/terraform-test.yml"
 LIVE_VERIFY_UI="https://github.com/lago-morph/k8s-platform/actions/workflows/live-verify.yml"
 
