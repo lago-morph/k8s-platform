@@ -126,7 +126,9 @@ ISSUER="$(jq -r '.SecretString | fromjson | .issuer_url // empty' "$WORK/out" 2>
 [ -n "$ISSUER" ] || die "$SECRET_ID has no issuer_url (unexpected document shape)"
 POOL_ID="${ISSUER##*/}"
 POOL_REGION="$(printf '%s' "$ISSUER" | sed -n 's#^https://cognito-idp\.\([a-z0-9-]*\)\.amazonaws\.com/.*#\1#p')"
-[ -n "$POOL_ID" ] && [ -n "$POOL_REGION" ] || die "cannot parse pool id/region from issuer_url $ISSUER"
+if [ -z "$POOL_ID" ] || [ -z "$POOL_REGION" ]; then
+  die "cannot parse pool id/region from issuer_url $ISSUER"
+fi
 echo "  pool:    $POOL_ID"
 echo "  region:  $POOL_REGION (from the pool's issuer_url)"
 echo
