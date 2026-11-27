@@ -14,6 +14,13 @@
 # AccessDenied — i.e. PVCs Pending exactly as in OI-2026-06-11-3, but with a
 # healthy-looking addon. Both are checked.
 #
+# Pins (kp-2al.53): every managed add-on must be RUNNING the version the repo
+# pins (terraform/management/variables.tf eks_addon_versions, read via
+# eks_addon_pin) — on the spoke: vpc-cni, kube-proxy, coredns and
+# aws-ebs-csi-driver; on the hub: vpc-cni, kube-proxy, coredns. A version
+# that differs from the pin means the pin did not reach the cluster (or the
+# add-on floats), so the build is not running what was tested.
+#
 # Exit-code contract (tests/live/lib/live-lib.sh): 0=pass(+covers), 2=skip,
 # 3=expect-full violation, other=fail. Read-only (describe/list only) — safe
 # in `full` + `verify-only`.
@@ -68,6 +75,47 @@ fi
 
 log "found crossplane EKS cluster: $crossplane_cluster — listing its addons"
 
+# check_pinned_addon <cluster> <addon> — the add-on exists, is ACTIVE and runs
+# exactly the pinned version. Prints one line; returns non-zero on a miss.
+check_pinned_addon() {
+  local cluster="$1" addon="$2" want desc st have
+  want="$(eks_addon_pin "$addon")"
+  if [ -z "$want" ]; then
+    ng "$addon: no pin in terraform/management/variables.tf eks_addon_versions"
+    return 1
+  fi
+  if ! desc="$(aws eks describe-addon --cluster-name "$cluster" \
+        --addon-name "$addon" --region "$REGION" --output json 2>&1)"; then
+    ng "$addon on $cluster: describe-addon failed (${desc%%$'\n'*}) — not a managed add-on, so its version floats"
+    return 1
+  fi
+  st="$(printf '%s' "$desc" | jq -r '.addon.status // "unknown"')"
+  have="$(printf '%s' "$desc" | jq -r '.addon.addonVersion // "unknown"')"
+  if [ "$have" != "$want" ]; then
+    ng "$addon on $cluster runs $have, pin is $want"
+    return 1
+  fi
+  if [ "$st" != "ACTIVE" ]; then
+    ng "$addon on $cluster is status=$st (want ACTIVE), version $have = pin"
+    return 1
+  fi
+  log "$addon on $cluster: ACTIVE, version $have = pin"
+}
+
+pin_fail=0
+for a in vpc-cni kube-proxy coredns; do
+  check_pinned_addon "$crossplane_cluster" "$a" || pin_fail=$((pin_fail + 1))
+done
+HUB="$(live_hub_cluster)"
+if aws eks describe-cluster --name "$HUB" --region "$REGION" >/dev/null 2>&1; then
+  for a in vpc-cni kube-proxy coredns; do
+    check_pinned_addon "$HUB" "$a" || pin_fail=$((pin_fail + 1))
+  done
+else
+  log "hub cluster $HUB not describable here — hub add-on pins not checked"
+fi
+[ "$pin_fail" -eq 0 ] || exit 1
+
 # Distinguish a DENIED read from a genuine absence (the 28759141867 class):
 # a denied list must never be reported as "the addon is not provisioned".
 if ! ADDONS_JSON="$(aws eks list-addons --cluster-name "$crossplane_cluster" \
@@ -108,8 +156,14 @@ case "$SA_ROLE" in
     fail_count=$((fail_count + 1)) ;;
 esac
 
+PIN="$(eks_addon_pin "$ADDON_NAME")"
+if [ "$VERSION" != "$PIN" ]; then
+  ng "$ADDON_NAME on $crossplane_cluster runs $VERSION, pin is ${PIN:-<none>}"
+  fail_count=$((fail_count + 1))
+fi
+
 [ "$fail_count" -eq 0 ] || exit 1
 
-ok "$ADDON_NAME addon ACTIVE on $crossplane_cluster (version $VERSION) under IRSA role $SA_ROLE"
+ok "$ADDON_NAME addon ACTIVE on $crossplane_cluster (version $VERSION = pin) under IRSA role $SA_ROLE; core add-ons on pin"
 covers "$KIND"
 exit "$LIVE_RC_PASS"
