@@ -36,7 +36,6 @@ resource "aws_cognito_user_pool_client" "keycloak" {
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
 
   # Keycloak redirect URI — must match the Keycloak broker callback.
-  # Update <domain> after Keycloak is deployed in Iteration 5.
   callback_urls = ["https://auth.platform.${var.domain}/realms/platform/broker/cognito/endpoint"]
   logout_urls   = ["https://auth.platform.${var.domain}/realms/platform/broker/cognito/endpoint/logout"]
 
@@ -54,9 +53,13 @@ resource "aws_cognito_user_pool_domain" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 }
 
-# Test user — only created when cognito_test_user_email is set.
-# Skipping this resource is safe for CI plan/apply cycles; it is only needed
-# when interactively testing SSO flows in Iteration 5.
+# CI existence probe, not a usable login. Created only when
+# cognito_test_user_email is set, which the build workflow always does
+# (terraform-test.yml "Generate Cognito test credentials", ci-test@<domain>),
+# and the workflow then asserts the user exists. Nobody can sign in with it:
+# the temporary password is generated inside the CI run, message_action
+# SUPPRESS leaves it in FORCE_CHANGE_PASSWORD, and it is in no group. Real
+# accounts are made with scripts/k8p-cognito-user.sh.
 resource "aws_cognito_user" "test" {
   count        = var.cognito_test_user_email != "" ? 1 : 0
   user_pool_id = aws_cognito_user_pool.main.id
