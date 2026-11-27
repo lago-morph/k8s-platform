@@ -59,6 +59,7 @@ echo "  cluster:       $CLUSTER_NAME"
 echo "  node image:    $KINDEST_NODE_IMAGE"
 echo "  crossplane:    $CROSSPLANE_CHART_VERSION"
 echo "  provider AWS:  $PROVIDER_FAMILY_AWS_VERSION"
+echo "  ESO chart:     $ESO_CHART_VERSION"
 echo "  chainsaw:      $CHAINSAW_VERSION"
 echo "  run id:        $CHAINSAW_RUN_ID"
 echo "  asm prefix:    $ASM_RUN_PREFIX"
@@ -269,7 +270,7 @@ if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
   helm repo update external-secrets >/dev/null
   helm install external-secrets external-secrets/external-secrets \
     --namespace external-secrets --create-namespace \
-    --version 0.10.4 \
+    --version "${ESO_CHART_VERSION}" \
     --set installCRDs=true \
     --wait --timeout 5m
 

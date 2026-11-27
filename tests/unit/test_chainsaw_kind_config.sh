@@ -229,4 +229,40 @@ else
   _fail "runsh_waits_for_provider_healthy" "must 'kubectl wait --for=condition=Healthy' on provider before scenarios"
 fi
 
+# ---- 15. everything run.sh installs into kind is pinned in versions.env ---
+#
+# Defends contract (kp-2al.53, owner 2026-11-27: "make sure to use most
+# recent version of add-ins and pin them"): every helm chart and every
+# Crossplane package run.sh installs takes its version from a variable this
+# file defines — never a floating tag, never a literal hidden in run.sh where
+# the cross-file version checks above cannot see it.
+while IFS= read -r line; do
+  var=$(printf '%s' "$line" | sed -nE 's/.*--version[[:space:]]+"?\$\{?([A-Z_]+)\}?"?.*/\1/p')
+  if [ -n "$var" ] && [ -n "${!var:-}" ]; then
+    _pass "runsh_helm_version_from_versions_env:$var"
+  else
+    _fail "runsh_helm_version_from_versions_env" "run.sh helm version not from a versions.env variable: $line"
+  fi
+done < <(grep -E '^[[:space:]]*--version[[:space:]]' tests/chainsaw/run.sh)
+
+while IFS= read -r line; do
+  var=$(printf '%s' "$line" | sed -nE 's/.*package:.*:\$\{([A-Z_]+)\}.*/\1/p')
+  if [ -n "$var" ] && [ -n "${!var:-}" ]; then
+    _pass "runsh_package_version_from_versions_env:$var"
+  else
+    _fail "runsh_package_version_from_versions_env" "run.sh package not pinned from a versions.env variable: $line"
+  fi
+done < <(grep -E '^[[:space:]]*package:' tests/chainsaw/run.sh)
+
+# Repo charts need --version; the Crossplane chart is a vendored .tgz whose
+# file name carries the pinned version.
+n_installs=$(grep -E '^[[:space:]]*helm install ' tests/chainsaw/run.sh | grep -cvE '"\$[A-Z_]+_TGZ"' || true)
+n_versions=$(grep -cE '^[[:space:]]*--version[[:space:]]' tests/chainsaw/run.sh || true)
+assert_eq "runsh_every_repo_helm_install_has_version" "$n_installs" "$n_versions"
+if grep -qE '^CROSSPLANE_CHART_TGZ=.*crossplane-\$\{CROSSPLANE_CHART_VERSION\}\.tgz' tests/chainsaw/run.sh; then
+  _pass "runsh_vendored_crossplane_chart_named_by_pin"
+else
+  _fail "runsh_vendored_crossplane_chart_named_by_pin" "CROSSPLANE_CHART_TGZ must be crossplane-\${CROSSPLANE_CHART_VERSION}.tgz"
+fi
+
 assert_summary
