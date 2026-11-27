@@ -182,18 +182,22 @@ data "aws_iam_policy_document" "opsbox" {
 
   # Creating an end-user directory account is a documented admin action
   # (docs/site/how-to/admin-access.md §4), so the box can perform it.
+  # scripts/k8p-cognito-user.sh also removes and lists accounts, hence
+  # AdminDeleteUser and ListUsers.
   statement {
     sid    = "AdministerTheDirectory"
     effect = "Allow"
     actions = [
       "cognito-idp:AdminAddUserToGroup",
       "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminDeleteUser",
       "cognito-idp:AdminGetUser",
       "cognito-idp:AdminListGroupsForUser",
       "cognito-idp:AdminSetUserPassword",
       "cognito-idp:DescribeUserPool",
       "cognito-idp:GetGroup",
       "cognito-idp:ListUserPools",
+      "cognito-idp:ListUsers",
     ]
     resources = ["*"]
   }
