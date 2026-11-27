@@ -111,10 +111,13 @@ shopt -u nullglob
 [ "$FOUND_ANY" -eq 1 ] || _fail "compositions_discovered" "no files under crossplane/compositions/ — glob broken?"
 
 # ---- 2. the known-safe selectors are still resolvable (regression anchor) --
-# platform-cluster's three surviving selectors target MRs WITH explicit
+# platform-cluster's surviving selectors target MRs WITH explicit
 # external-name patches; if someone deletes those patches the scan above
 # flips red. This count pins the audited baseline (update deliberately).
+# 3 -> 6 (kp-2al.53): the vpc-cni/kube-proxy/coredns Addons each resolve
+# clusterNameSelector to the eks-cluster MR, the same audited target (its
+# external-name is patched from spec.name) the NodeGroup already uses.
 SEL_COUNT=$(grep -c "Selector:$" crossplane/compositions/platform-cluster.yaml)
-assert_eq "platform_cluster_selector_baseline" "3" "$SEL_COUNT"
+assert_eq "platform_cluster_selector_baseline" "6" "$SEL_COUNT"
 
 assert_summary

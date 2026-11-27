@@ -228,6 +228,12 @@ run_suite tests/unit/test_region_is_a_variable.sh
 # retention set in one place (a group EKS creates itself never expires).
 run_suite tests/unit/test_control_plane_logging.sh
 
+# kp-2al.53: every EKS managed add-on (hub and spokes) is pinned to an exact
+# version in ONE place (terraform eks_addon_versions -> hub cluster_addons +
+# cluster-network EnvironmentConfig -> every composed Addon, Required); none
+# floats, and the kube-proxy pin matches every cluster's Kubernetes minor.
+run_suite tests/unit/test_eks_addons_pinned.sh
+
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
 # completeness": a test file absent from the run_suite list above is gated

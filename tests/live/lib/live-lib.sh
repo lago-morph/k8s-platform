@@ -92,6 +92,21 @@ relay_err_tail() {
 # default is the durable hub name (the same constant hello-e2e-live.sh pins).
 live_hub_cluster() { echo "${LIVE_HUB_CLUSTER:-k8-platform-mgmt}"; }
 
+# eks_addon_pin <addon-name> — the version the repo pins that EKS add-on to:
+# its entry in the default of terraform/management/variables.tf
+# eks_addon_versions (the one place each add-on version is set; kp-2al.53).
+# Prints nothing if the add-on has no pin. tests/unit/test_eks_addons_pinned.sh
+# exercises this same reader.
+eks_addon_pin() {
+  awk -v a="$1" '
+    /^variable "eks_addon_versions"/ { on = 1; next }
+    on && /^}/ { exit }
+    on && $0 ~ "^[[:space:]]*\"" a "\"[[:space:]]*=" {
+      v = $0; sub(/^[^=]*=[[:space:]]*"/, "", v); sub(/".*/, "", v); print v; exit
+    }
+  ' "$_REPO_ROOT/terraform/management/variables.tf"
+}
+
 # hub_fixture_absent <what> — a hub-fixture check whose hub API call SUCCEEDED
 # but found <what> missing. The hub ANSWERED, so this is a STRUCTURAL absence,
 # never a not-applicable: the check still exits with the skip code (only the

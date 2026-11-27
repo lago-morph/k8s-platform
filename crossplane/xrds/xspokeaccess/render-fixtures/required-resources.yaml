@@ -19,3 +19,11 @@ data:
   domain: render-probe.example.test
   accountId: "000000000000"
   argocdRoleArn: arn:aws:iam::000000000000:role/k8-platform-services-argocd
+  # Probe add-on pins (NOT the real ones — those live in
+  # terraform/management/variables.tf eks_addon_versions), distinct per
+  # add-on so the golden shows each Addon got its own key.
+  eksAddonVersions:
+    vpc-cni: v0.0.1-eksbuild.1
+    coredns: v0.0.2-eksbuild.1
+    kube-proxy: v0.0.3-eksbuild.1
+    aws-ebs-csi-driver: v0.0.4-eksbuild.1

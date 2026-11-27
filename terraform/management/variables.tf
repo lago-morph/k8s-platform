@@ -58,6 +58,38 @@ variable "node_instance_type" {
   default     = "m5.large"
 }
 
+variable "eks_addon_versions" {
+  description = <<-EOT
+    Exact version of every EKS managed add-on the platform installs, keyed by
+    add-on name. The single place each is set: the hub's cluster_addons
+    (eks.tf) read it, and it is published as eksAddonVersions in the
+    cluster-network EnvironmentConfig, from which the platform-cluster and
+    XSpokeAccess Compositions pin every spoke Addon (Required: no pin, no
+    Addon). Pinned, never most_recent, so a rebuild installs what was tested.
+    Each value is the newest version EKS lists as compatible with the clusters'
+    Kubernetes version (kube-proxy is built per minor and must match it):
+      aws eks describe-addon-versions --kubernetes-version <k8s> \
+        --addon-name <name> --region us-east-1 \
+        --query 'addons[0].addonVersions[0].addonVersion'
+    Queried 2026-11-27 for Kubernetes 1.37 (kp-2al.53).
+  EOT
+  type        = map(string)
+  default = {
+    "vpc-cni"            = "v1.23.3-eksbuild.2"
+    "coredns"            = "v1.14.7-eksbuild.35"
+    "kube-proxy"         = "v1.37.0-eksbuild.39"
+    "aws-ebs-csi-driver" = "v1.68.1-eksbuild.1"
+  }
+
+  validation {
+    condition = alltrue([
+      for a in ["vpc-cni", "coredns", "kube-proxy", "aws-ebs-csi-driver"] :
+      can(regex("^v[0-9]+\\.[0-9]+\\.[0-9]+-eksbuild\\.[0-9]+$", lookup(var.eks_addon_versions, a, "")))
+    ])
+    error_message = "eks_addon_versions must pin vpc-cni, coredns, kube-proxy and aws-ebs-csi-driver to exact versions (vX.Y.Z-eksbuild.N)."
+  }
+}
+
 variable "node_desired_size" {
   description = "Desired node count. 2 m5.large nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
   type        = number

@@ -54,7 +54,7 @@ assert_eq "composition_env_config_ref_cluster_network" "cluster-network" "$ENV_R
 FN_REF=$(yq -r '.spec.pipeline[] | select(.functionRef.name == "function-patch-and-transform") | .functionRef.name' "$COMP")
 assert_eq "composition_function_ref" "function-patch-and-transform" "$FN_REF"
 
-# ---- 3. Sixteen resources rendered -----------------------------------
+# ---- 3. Nineteen resources rendered ----------------------------------
 # 2 roles, 4 attachments, cluster, node group, + 3 cert resources
 # (acm Certificate, route53 validation Record, acm CertificateValidation),
 # + 3 sandbox kubectl access resources (SecurityGroupRule,
@@ -62,9 +62,11 @@ assert_eq "composition_function_ref" "function-patch-and-transform" "$FN_REF"
 # + the hub→hosted-cluster EKS-API 443 rule (hub-eks-api-ingress,
 # OI-2026-06-07-4 — gated in depth by test_hub_spoke_api_ingress.sh),
 # + the Keycloak OIDC IdentityProviderConfig (phase-5, REQ-AUTH-07 —
-# gated in depth by test_platform_cluster_oidc_idp.sh).
+# gated in depth by test_platform_cluster_oidc_idp.sh),
+# + 3 pinned EKS managed add-ons (vpc-cni, kube-proxy, coredns — kp-2al.53,
+# gated in depth by test_eks_addons_pinned.sh).
 RES_COUNT=$(yq -r "${PT}.resources | length" "$COMP")
-assert_eq "composition_resource_count" "16" "$RES_COUNT"
+assert_eq "composition_resource_count" "19" "$RES_COUNT"
 
 # Names — fixed set gives readable test failures.
 for n in cluster-role cluster-role-policy node-role node-worker-policy \
