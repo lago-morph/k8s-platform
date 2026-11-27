@@ -64,6 +64,7 @@ metadata:
 spec:
   forProvider:
     addonName: aws-ebs-csi-driver
+    addonVersion: v0.0.4-eksbuild.1
     clusterName: render-probe
     region: us-east-1
     resolveConflictsOnCreate: OVERWRITE

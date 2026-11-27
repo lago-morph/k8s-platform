@@ -43,17 +43,49 @@ esac
 
 # ---- 2. KINDEST_NODE_IMAGE major.minor is in an allowlist ----------------
 #
-# Defends contract: only Kubernetes versions in the Crossplane v2
-# support matrix can be used. Bumping outside the allowlist must be a
-# deliberate edit to this test.
+# Defends contract: only Kubernetes versions deliberately proven with the
+# pinned Crossplane chart + providers + functions can be used. Bumping
+# outside the allowlist must be a deliberate edit to this test.
+# v1.37: owner ruling 2026-11-27 (kp-2al.41), proven by a local chainsaw
+# run on kind v0.33.0 / kindest/node v1.37.0.
 case "${KINDEST_NODE_IMAGE:-}" in
-  *kindest/node:v1.31.*|*kindest/node:v1.32.*|*kindest/node:v1.33.*)
+  *kindest/node:v1.37.*)
     _pass "kindest_node_image_version_in_allowlist"
     ;;
   *)
-    _fail "kindest_node_image_version_in_allowlist" "version not in v1.31/v1.32/v1.33 allowlist: '$KINDEST_NODE_IMAGE'"
+    _fail "kindest_node_image_version_in_allowlist" "version not in v1.37 allowlist: '$KINDEST_NODE_IMAGE'"
     ;;
 esac
+
+# ---- 2b. kind node runs the SAME Kubernetes minor as the hub --------------
+#
+# Defends contract (owner ruling 2026-11-27): the local kind cluster runs
+# the same Kubernetes version as EKS. A chainsaw pass on an older minor
+# than the hub proves nothing about admission/CRD behaviour on the hub.
+HUB_K8S=$(awk '/variable "cluster_version"/,/^}/' "$TF_VARIABLES" \
+  | awk -F'"' '/default/ {print $2}')
+KIND_K8S=$(printf '%s\n' "${KINDEST_NODE_IMAGE:-}" \
+  | sed -nE 's#.*kindest/node:v([0-9]+\.[0-9]+)\..*#\1#p')
+echo "  hub cluster_version=${HUB_K8S:-<unparsed>} kind node minor=${KIND_K8S:-<unparsed>}"
+if [ -z "$HUB_K8S" ] || [ -z "$KIND_K8S" ]; then
+  _fail "kind_node_minor_matches_hub" "could not parse hub ($TF_VARIABLES) or kind ($VERSIONS) version"
+elif [ "$HUB_K8S" = "$KIND_K8S" ]; then
+  _pass "kind_node_minor_matches_hub"
+else
+  _fail "kind_node_minor_matches_hub" "kind=$KIND_K8S hub=$HUB_K8S — bump both together"
+fi
+
+# ---- 2c. kubectl CLI within the +/-1 minor skew of the hub ---------------
+KUBECTL_MINOR=$(printf '%s\n' "${KUBECTL_VERSION:-}" | sed -nE 's#^v1\.([0-9]+)\..*#\1#p')
+HUB_MINOR=${HUB_K8S#1.}
+echo "  kubectl=${KUBECTL_VERSION:-<unset>} (minor ${KUBECTL_MINOR:-<unparsed>}) hub minor=${HUB_MINOR:-<unparsed>}"
+if [ -z "$KUBECTL_MINOR" ] || [ -z "$HUB_MINOR" ]; then
+  _fail "kubectl_within_skew_of_hub" "could not parse KUBECTL_VERSION or hub version"
+elif [ $((KUBECTL_MINOR - HUB_MINOR)) -ge -1 ] && [ $((KUBECTL_MINOR - HUB_MINOR)) -le 1 ]; then
+  _pass "kubectl_within_skew_of_hub"
+else
+  _fail "kubectl_within_skew_of_hub" "kubectl 1.$KUBECTL_MINOR vs hub $HUB_K8S exceeds +/-1 minor"
+fi
 
 # ---- 3. CROSSPLANE_CHART_VERSION is a literal, no :latest ----------------
 case "${CROSSPLANE_CHART_VERSION:-}" in
@@ -195,6 +227,42 @@ if grep -qE 'kubectl wait.*Healthy.*provider' tests/chainsaw/run.sh; then
   _pass "runsh_waits_for_provider_healthy"
 else
   _fail "runsh_waits_for_provider_healthy" "must 'kubectl wait --for=condition=Healthy' on provider before scenarios"
+fi
+
+# ---- 15. everything run.sh installs into kind is pinned in versions.env ---
+#
+# Defends contract (kp-2al.53, owner 2026-11-27: "make sure to use most
+# recent version of add-ins and pin them"): every helm chart and every
+# Crossplane package run.sh installs takes its version from a variable this
+# file defines — never a floating tag, never a literal hidden in run.sh where
+# the cross-file version checks above cannot see it.
+while IFS= read -r line; do
+  var=$(printf '%s' "$line" | sed -nE 's/.*--version[[:space:]]+"?\$\{?([A-Z_]+)\}?"?.*/\1/p')
+  if [ -n "$var" ] && [ -n "${!var:-}" ]; then
+    _pass "runsh_helm_version_from_versions_env:$var"
+  else
+    _fail "runsh_helm_version_from_versions_env" "run.sh helm version not from a versions.env variable: $line"
+  fi
+done < <(grep -E '^[[:space:]]*--version[[:space:]]' tests/chainsaw/run.sh)
+
+while IFS= read -r line; do
+  var=$(printf '%s' "$line" | sed -nE 's/.*package:.*:\$\{([A-Z_]+)\}.*/\1/p')
+  if [ -n "$var" ] && [ -n "${!var:-}" ]; then
+    _pass "runsh_package_version_from_versions_env:$var"
+  else
+    _fail "runsh_package_version_from_versions_env" "run.sh package not pinned from a versions.env variable: $line"
+  fi
+done < <(grep -E '^[[:space:]]*package:' tests/chainsaw/run.sh)
+
+# Repo charts need --version; the Crossplane chart is a vendored .tgz whose
+# file name carries the pinned version.
+n_installs=$(grep -E '^[[:space:]]*helm install ' tests/chainsaw/run.sh | grep -cvE '"\$[A-Z_]+_TGZ"' || true)
+n_versions=$(grep -cE '^[[:space:]]*--version[[:space:]]' tests/chainsaw/run.sh || true)
+assert_eq "runsh_every_repo_helm_install_has_version" "$n_installs" "$n_versions"
+if grep -qE '^CROSSPLANE_CHART_TGZ=.*crossplane-\$\{CROSSPLANE_CHART_VERSION\}\.tgz' tests/chainsaw/run.sh; then
+  _pass "runsh_vendored_crossplane_chart_named_by_pin"
+else
+  _fail "runsh_vendored_crossplane_chart_named_by_pin" "CROSSPLANE_CHART_TGZ must be crossplane-\${CROSSPLANE_CHART_VERSION}.tgz"
 fi
 
 assert_summary

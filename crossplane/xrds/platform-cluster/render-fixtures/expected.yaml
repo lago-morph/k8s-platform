@@ -51,6 +51,106 @@ spec:
   providerConfigRef:
     kind: ClusterProviderConfig
     name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: Addon
+metadata:
+  annotations:
+    platform.k8-platform.io/after-nodegroup: arn:aws:eks:us-east-1:000000000000:nodegroup/render-probe/render-probe-default/00000000-0000-0000-0000-000000000000
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: addon-coredns
+  name: render-probe-cluster-8ea27ed34903
+  namespace: default
+spec:
+  forProvider:
+    addonName: coredns
+    addonVersion: v0.0.2-eksbuild.1
+    clusterNameSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: eks-cluster
+    region: us-east-1
+    resolveConflictsOnCreate: OVERWRITE
+    resolveConflictsOnUpdate: OVERWRITE
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: Addon
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: addon-vpc-cni
+  name: render-probe-cluster-f1dae58516dc
+  namespace: default
+spec:
+  forProvider:
+    addonName: vpc-cni
+    addonVersion: v0.0.1-eksbuild.1
+    clusterNameSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: eks-cluster
+    region: us-east-1
+    resolveConflictsOnCreate: OVERWRITE
+    resolveConflictsOnUpdate: OVERWRITE
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
+apiVersion: eks.aws.m.upbound.io/v1beta1
+kind: Addon
+metadata:
+  annotations: {}
+  generateName: render-probe-cluster-
+  labels:
+    crossplane.io/composite: render-probe-cluster
+    platform.k8-platform.io/role: addon-kube-proxy
+  name: render-probe-cluster-fc0de3446376
+  namespace: default
+spec:
+  forProvider:
+    addonName: kube-proxy
+    addonVersion: v0.0.3-eksbuild.1
+    clusterNameSelector:
+      matchControllerRef: true
+      matchLabels:
+        platform.k8-platform.io/role: eks-cluster
+    region: us-east-1
+    resolveConflictsOnCreate: OVERWRITE
+    resolveConflictsOnUpdate: OVERWRITE
+    tags:
+      ClusterName: render-probe
+      ManagedBy: crossplane
+      PlatformAbstraction: PlatformCluster
+  managementPolicies:
+    - Observe
+    - Create
+    - Update
+    - Delete
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: default
 apiVersion: acm.aws.m.upbound.io/v1beta1
 kind: Certificate
 metadata:
@@ -117,6 +217,10 @@ spec:
   forProvider:
     accessConfig:
       authenticationMode: API_AND_CONFIG_MAP
+    enabledClusterLogTypes:
+      - api
+      - audit
+      - authenticator
     region: us-east-1
     roleArnSelector:
       matchControllerRef: true
@@ -126,7 +230,7 @@ spec:
       ClusterName: render-probe
       ManagedBy: crossplane
       PlatformAbstraction: PlatformCluster
-    version: "1.32"
+    version: "1.37"
     vpcConfig:
       endpointPrivateAccess: true
       endpointPublicAccess: true
@@ -474,6 +578,15 @@ spec:
         kind: AccessPolicyAssociation
         name: render-probe-cluster-3ba6f10847d3
       - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: Addon
+        name: render-probe-cluster-8ea27ed34903
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: Addon
+        name: render-probe-cluster-f1dae58516dc
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
+        kind: Addon
+        name: render-probe-cluster-fc0de3446376
+      - apiVersion: eks.aws.m.upbound.io/v1beta1
         kind: Cluster
         name: render-probe-cluster-69f9d71223c3
       - apiVersion: eks.aws.m.upbound.io/v1beta1
@@ -511,7 +624,7 @@ spec:
     maxSize: 3
     minSize: 1
   region: us-east-1
-  version: "1.32"
+  version: "1.37"
 status:
   certValidationRecordFqdn: _0000000000000000000000000000probe.platform.render-probe.example.test
   certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
@@ -522,7 +635,8 @@ status:
     - reason: ReconcileSuccess
       status: "True"
       type: Synced
-    - message: 'Unready resources: cluster-cert-validation, cluster-cert-validation-record, cluster-certificate, and 13 more'
+    - message: 'Unready resources: addon-coredns, addon-kube-proxy, addon-vpc-cni, and 16 more'
       reason: Creating
       status: "False"
       type: Ready
+  nodeGroupArn: arn:aws:eks:us-east-1:000000000000:nodegroup/render-probe/render-probe-default/00000000-0000-0000-0000-000000000000

@@ -318,6 +318,15 @@ spec:
                   # CONFIG_MAP is a one-way but in-place EKS operation).
                   accessConfig:
                     authenticationMode: API_AND_CONFIG_MAP
+                  # Control-plane logs to CloudWatch (kp-2al.45): the API
+                  # audit trail has no kubectl path. EKS writes to
+                  # /aws/eks/<name>/cluster; terraform/management/
+                  # control-plane-logs.tf pre-creates that group with bounded
+                  # retention, because a group EKS creates never expires.
+                  enabledClusterLogTypes:
+                    - api
+                    - audit
+                    - authenticator
                   # roleArnSelector resolves the control-plane role by
                   # matching the labels we set via patches below.
                   roleArnSelector:
@@ -457,6 +466,161 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: status.atProvider.arn
                 toFieldPath: status.nodeGroupArn
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          # ---------- 8a-8c. Core EKS managed add-ons ---------------
+          # vpc-cni, kube-proxy and coredns as MANAGED add-ons, each pinned
+          # to an exact version. Left to EKS, a new cluster gets
+          # self-managed copies at EKS's default version for its Kubernetes
+          # minor, which never update and are pinned nowhere in code
+          # (kp-2al.53). addonVersion comes from the cluster-network
+          # EnvironmentConfig eksAddonVersions — terraform/management
+          # var.eks_addon_versions, the same map the hub's cluster_addons
+          # use, so each add-on version is set in one place — with a
+          # Required policy: no pin, no Addon (never EKS's floating
+          # default). OVERWRITE lets each managed add-on adopt the
+          # self-managed objects EKS created with the cluster (same reasoning
+          # as the hub's vpc-cni, terraform eks.tf). kube-proxy is built per
+          # Kubernetes minor: its pin must match spec.version
+          # (tests/unit/test_eks_addons_pinned.sh holds them equal).
+          # configurationValues stay at EKS defaults, as the self-managed
+          # copies were (the hub's prefix delegation is a hub-only sizing
+          # choice).
+          - name: addon-vpc-cni
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: Addon
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: addon-vpc-cni
+              spec:
+                forProvider:
+                  region: us-east-1
+                  addonName: vpc-cni
+                  clusterNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      platform.k8-platform.io/role: eks-cluster
+                  resolveConflictsOnCreate: OVERWRITE
+                  resolveConflictsOnUpdate: OVERWRITE
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: eksAddonVersions[vpc-cni]
+                toFieldPath: spec.forProvider.addonVersion
+                policy:
+                  fromFieldPath: Required
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          - name: addon-kube-proxy
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: Addon
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: addon-kube-proxy
+              spec:
+                forProvider:
+                  region: us-east-1
+                  addonName: kube-proxy
+                  clusterNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      platform.k8-platform.io/role: eks-cluster
+                  resolveConflictsOnCreate: OVERWRITE
+                  resolveConflictsOnUpdate: OVERWRITE
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: eksAddonVersions[kube-proxy]
+                toFieldPath: spec.forProvider.addonVersion
+                policy:
+                  fromFieldPath: Required
+            readinessChecks:
+              - type: MatchCondition
+                matchCondition:
+                  type: Ready
+                  status: "True"
+
+          - name: addon-coredns
+            base:
+              apiVersion: eks.aws.m.upbound.io/v1beta1
+              kind: Addon
+              metadata:
+                labels:
+                  platform.k8-platform.io/role: addon-coredns
+              spec:
+                forProvider:
+                  region: us-east-1
+                  addonName: coredns
+                  clusterNameSelector:
+                    matchControllerRef: true
+                    matchLabels:
+                      platform.k8-platform.io/role: eks-cluster
+                  resolveConflictsOnCreate: OVERWRITE
+                  resolveConflictsOnUpdate: OVERWRITE
+                  tags:
+                    ManagedBy: crossplane
+                    PlatformAbstraction: PlatformCluster
+                managementPolicies: [Observe, Create, Update, Delete]
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: default
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.region
+                toFieldPath: spec.forProvider.region
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.name
+                toFieldPath: spec.forProvider.tags.ClusterName
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: eksAddonVersions[coredns]
+                toFieldPath: spec.forProvider.addonVersion
+                policy:
+                  fromFieldPath: Required
+              # coredns is a Deployment: created before the node group has
+              # nodes it cannot schedule and EKS reports it DEGRADED. Gate it
+              # on the node group the way the hub's terraform module does
+              # (add-ons after node groups): nodeGroupArn reaches the XR only
+              # once the NodeGroup exists, and Required holds the Addon back
+              # until then.
+              - type: FromCompositeFieldPath
+                fromFieldPath: status.nodeGroupArn
+                toFieldPath: metadata.annotations[platform.k8-platform.io/after-nodegroup]
+                policy:
+                  fromFieldPath: Required
             readinessChecks:
               - type: MatchCondition
                 matchCondition:

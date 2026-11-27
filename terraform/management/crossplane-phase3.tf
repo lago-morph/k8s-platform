@@ -179,6 +179,10 @@ locals {
       # Node instance types for every spoke NodeGroup — the same variable the
       # hub node group uses (eks.tf), so node types are set in one place.
       nodeInstanceTypes = [var.node_instance_type]
+      # Exact EKS add-on versions (add-on name -> version) — the same map the
+      # hub's cluster_addons use (eks.tf), so each add-on version is set in
+      # one place. Every spoke Addon reads its version from here, Required.
+      eksAddonVersions = var.eks_addon_versions
       # Base-VPC identity for Compositions that place non-EKS resources
       # in-VPC (first consumer: the XDatabase RDS SubnetGroup/SecurityGroup —
       # without these the RDS Instance lands in the account DEFAULT VPC,

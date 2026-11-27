@@ -27,6 +27,15 @@ module "eks" {
   # rejected ("the server has asked for the client to provide credentials").
   enable_cluster_creator_admin_permissions = true
 
+  # Control-plane logs to CloudWatch (kp-2al.45). The API audit trail has no
+  # kubectl path, so this is the only way to read it. These equal the module
+  # v20 defaults for the log types; pinned so a default change cannot drop
+  # them silently. Retention is NOT the default: the module keeps 90 days.
+  # The module owns /aws/eks/<cluster>/cluster, so `terraform destroy`
+  # removes it.
+  cluster_enabled_log_types              = ["api", "audit", "authenticator"]
+  cloudwatch_log_group_retention_in_days = var.control_plane_log_retention_days
+
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
 
@@ -40,9 +49,17 @@ module "eks" {
   # timing out the helm hook. Prefix delegation assigns /28 prefixes instead of
   # single IPs, raising t3.medium max-pods from ~17 to ~110. resolve_conflicts
   # OVERWRITE lets the managed addon adopt the existing self-managed aws-node.
+  #
+  # Every add-on is pinned to an exact version from var.eks_addon_versions
+  # (the one place each is set; spokes read the same map via the
+  # cluster-network EnvironmentConfig). coredns and kube-proxy are managed
+  # add-ons too: without that, EKS installs self-managed copies at cluster
+  # creation at its default version and never updates them, so they were
+  # neither newest nor pinned in code (kp-2al.53). The module creates them
+  # after the node group, so coredns has nodes to schedule on.
   cluster_addons = {
     vpc-cni = {
-      most_recent                 = true
+      addon_version               = var.eks_addon_versions["vpc-cni"]
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
       configuration_values = jsonencode({
@@ -51,6 +68,16 @@ module "eks" {
           WARM_PREFIX_TARGET       = "1"
         }
       })
+    }
+    coredns = {
+      addon_version               = var.eks_addon_versions["coredns"]
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
+    kube-proxy = {
+      addon_version               = var.eks_addon_versions["kube-proxy"]
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
     }
   }
 

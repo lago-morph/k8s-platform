@@ -293,9 +293,22 @@ echo "Running EC2:     $(aws ec2 describe-instances --filters Name=instance-stat
 echo "ACM certs:       $(aws acm list-certificates --query 'length(CertificateSummaryList)' --output text)"
 echo "k8-platform IAM roles:"
 aws iam list-roles --query "Roles[?starts_with(RoleName, 'k8-platform-')].RoleName" --output text
+echo "EKS log groups:"
+aws logs describe-log-groups --log-group-name-prefix /aws/eks/ --query 'logGroups[].logGroupName' --output text
 ```
 
-Expected: `0` for every count, and no role names.
+Expected: `0` for every count, no role names, and no log groups.
+
+**If an `/aws/eks/<cluster>/cluster` log group survives**, it holds that
+cluster's control-plane logs. The management `terraform destroy` owns
+and removes the hub's group and one group per XR under `clusters/`
+(created there so their retention is bounded). A survivor is either a
+group EKS made itself for a cluster with no XR under `clusters/` (it
+never expires), or one the destroy did not remove — and that one makes
+the next management apply fail with `ResourceAlreadyExistsException`.
+Delete either kind:
+`aws logs delete-log-group --log-group-name /aws/eks/<cluster>/cluster`.
+*Not yet observed on a teardown: `pending clean-build verification`.*
 
 **If the EBS count is not zero**, stage 3 did not happen or did not work.
 The volumes are safe to remove once the cluster is gone — nothing else

@@ -655,6 +655,10 @@ spec:
           # resolveConflictsOnCreate OVERWRITE lets the managed addon
           # adopt any pre-existing self-managed driver objects (same
           # reasoning as the hub's vpc-cni addon, terraform eks.tf).
+          # addonVersion is pinned from the cluster-network
+          # EnvironmentConfig eksAddonVersions (terraform/management
+          # var.eks_addon_versions, the one place it is set), Required:
+          # no pin, no Addon — never EKS's floating default (kp-2al.53).
           - name: ebs-csi-addon
             base:
               apiVersion: eks.aws.m.upbound.io/v1beta1
@@ -688,6 +692,11 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: status.ebsCsiRoleArn
                 toFieldPath: spec.forProvider.serviceAccountRoleArn
+                policy:
+                  fromFieldPath: Required
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: eksAddonVersions[aws-ebs-csi-driver]
+                toFieldPath: spec.forProvider.addonVersion
                 policy:
                   fromFieldPath: Required
             readinessChecks:

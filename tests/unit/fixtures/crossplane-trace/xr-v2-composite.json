@@ -89,6 +89,21 @@
           "apiVersion": "route53.aws.m.upbound.io/v1beta1",
           "kind": "Record",
           "name": "render-probe-cluster-ef1365dce72a"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "Addon",
+          "name": "render-probe-cluster-8ea27ed34903"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "Addon",
+          "name": "render-probe-cluster-f1dae58516dc"
+        },
+        {
+          "apiVersion": "eks.aws.m.upbound.io/v1beta1",
+          "kind": "Addon",
+          "name": "render-probe-cluster-fc0de3446376"
         }
       ],
       "compositionRef": {

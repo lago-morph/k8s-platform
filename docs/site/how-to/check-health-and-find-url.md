@@ -69,3 +69,34 @@ Composite resources report the same way everywhere:
 kubectl get xplatformsecret,xdatabase -n <ns>   # READY column
 kubectl describe xdatabase <name> -n <ns>       # conditions + events
 ```
+
+## Where to find logs
+
+Most logs are one `kubectl logs` away. The table says where each kind
+of log lives, how to reach it, and what is **not** kept anywhere.
+
+!!! warning "Live behaviour unverified"
+    The control-plane log configuration below is committed but has not
+    yet run on a build, and the commands in this table have not been
+    exercised against a live platform: `pending clean-build verification`.
+
+| Log | Where it lives | How to reach it | Kept for |
+|---|---|---|---|
+| A running container | the node | `kubectl -n <ns> logs <pod> [-c <container>]` | the pod's life |
+| The previous run of a restarted container | the node | `kubectl -n <ns> logs <pod> --previous` | until the next restart |
+| A pod that was deleted or rescheduled | **nowhere** | not kept: read it before it goes. Its lifecycle (who deleted it, when) is in the audit log below | — |
+| Events (`Back-off`, `FailedScheduling`, …) | the cluster | `kubectl -n <ns> get events --sort-by=.lastTimestamp` | about 1 hour |
+| EKS control plane: API server, audit, authenticator — hub **and** every spoke | CloudWatch Logs, `/aws/eks/<cluster>/cluster` | `aws logs tail /aws/eks/<cluster>/cluster --since 1h --log-stream-name-prefix kube-apiserver-audit`, or the CloudWatch console | 7 days (`control_plane_log_retention_days`) |
+| kubelet / containerd on a live node | the node's journal | `kubectl debug node/<node> -it --image=busybox -- chroot /host journalctl -u kubelet --since '1 hour ago'` (needs create-pod rights) | the node's life |
+| A node that never joined | EC2 console output | `aws ec2 get-console-output --instance-id <id> --latest --output text` | the instance's life |
+| A Terraform or verification run | GitHub Actions | the run's page in the Actions tab | 90 days |
+| `k8p-bringup.sh` on the ops box | the browser shell's terminal | scroll back, or keep a copy yourself with `script -a ~/bringup.log` before you run it | the session; **lost** when the box is destroyed |
+
+The cluster names are `k8-platform-mgmt` (hub), `k8-platform-services`
+(platform) and `k8-platform-workload1` (workload). Audit log streams are
+named `kube-apiserver-audit-*`, API server streams `kube-apiserver-*`,
+and authenticator streams `authenticator-*`.
+
+The ops box's instance role can describe log groups but cannot search
+them (`logs:FilterLogEvents`), so `aws logs tail` there fails; run it
+with the account's own credentials or use the CloudWatch console.

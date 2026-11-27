@@ -8,9 +8,10 @@
 # XR carries only stable values; spec.dns.subdomain is the per-cluster
 # DNS label.
 #
-# Renders 14 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
-# EKS Cluster + NodeGroup + ACM Certificate + route53 Record +
-# ACM CertificateValidation + SecurityGroupRule + AccessEntry +
+# Renders 19 managed resources: 2 IAM roles + 4 RolePolicyAttachments +
+# EKS Cluster + NodeGroup + 3 EKS Addons (vpc-cni, kube-proxy, coredns) +
+# ACM Certificate + route53 Record + ACM CertificateValidation +
+# 2 SecurityGroupRules + IdentityProviderConfig + AccessEntry +
 # AccessPolicyAssociation, all under *.aws.m.upbound.io API groups.
 #
 # metadata.uid is pinned for deterministic render output (see SPEC-S9
@@ -25,7 +26,7 @@ metadata:
 spec:
   name: render-probe
   region: us-east-1
-  version: "1.32"
+  version: "1.37"
   dns:
     subdomain: platform
   nodeGroup:
@@ -41,3 +42,5 @@ spec:
 status:
   certificateArn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
   certValidationRecordFqdn: _0000000000000000000000000000probe.platform.render-probe.example.test
+  # Gate for the coredns Addon (composed only once the NodeGroup exists).
+  nodeGroupArn: arn:aws:eks:us-east-1:000000000000:nodegroup/render-probe/render-probe-default/00000000-0000-0000-0000-000000000000
