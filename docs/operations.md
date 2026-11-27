@@ -145,10 +145,13 @@ kubectl get pods -A
 ```
 
 ArgoCD UI is at `https://argocd.management.${TF_VAR_domain}`.
-Initial admin password:
+Admin password (user `admin`): it lives in AWS Secrets Manager,
+`k8-platform/management/argocd-admin`, which is authoritative. Terraform
+seeds it once; do not use `argocd-initial-admin-secret`.
 ```bash
-kubectl -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath='{.data.password}' | base64 -d
+scripts/k8p-argocd-password.sh show --reveal   # print it
+scripts/k8p-argocd-password.sh check           # does it log in?
+scripts/k8p-argocd-password.sh set --generate  # change it (ASM + Argo CD, rolled back on failure)
 ```
 
 ---

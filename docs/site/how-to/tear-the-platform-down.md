@@ -332,6 +332,13 @@ the spoke's Loki, Prometheus and Alertmanager claims.
     secrets *are* removed with their managed resources. Build #7 rebuilt
     successfully over the survivor, so this is a note, not a blocker.
 
+    The Terraform-owned secrets, `k8-platform/base/cognito` and
+    `k8-platform/management/argocd-admin` (the Argo CD admin password),
+    are deleted by `terraform destroy` **immediately**, with no recovery
+    window, so the next bring-up can re-create the same names. A changed
+    Argo CD password does not survive a teardown: the rebuild seeds a new
+    one.
+
 !!! note "The Route53 hosted zone is not yours to delete"
     The account's public hosted zone is **pre-existing** — it comes with
     the account, and the build discovers it rather than creating it. It
