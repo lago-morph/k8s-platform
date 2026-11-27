@@ -27,6 +27,15 @@ module "eks" {
   # rejected ("the server has asked for the client to provide credentials").
   enable_cluster_creator_admin_permissions = true
 
+  # Control-plane logs to CloudWatch (kp-2al.45). The API audit trail has no
+  # kubectl path, so this is the only way to read it. These equal the module
+  # v20 defaults for the log types; pinned so a default change cannot drop
+  # them silently. Retention is NOT the default: the module keeps 90 days.
+  # The module owns /aws/eks/<cluster>/cluster, so `terraform destroy`
+  # removes it.
+  cluster_enabled_log_types              = ["api", "audit", "authenticator"]
+  cloudwatch_log_group_retention_in_days = var.control_plane_log_retention_days
+
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
 

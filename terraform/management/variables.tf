@@ -32,6 +32,19 @@ variable "cluster_version" {
   default     = "1.35"
 }
 
+variable "control_plane_log_retention_days" {
+  description = <<-EOT
+    Days CloudWatch keeps EKS control-plane logs (api, audit, authenticator)
+    for EVERY cluster: the hub's log group (eks.tf; the module default is 90)
+    and each spoke's pre-created group (control-plane-logs.tf; without it EKS
+    creates the group with never-expire retention). The single place it is
+    set. Short on purpose: these are the only copy of the API audit trail,
+    needed while debugging a build, and the account is ephemeral (kp-2al.45).
+  EOT
+  type        = number
+  default     = 7
+}
+
 variable "node_instance_type" {
   description = <<-EOT
     EC2 instance type for the nodes of EVERY cluster the platform runs: the

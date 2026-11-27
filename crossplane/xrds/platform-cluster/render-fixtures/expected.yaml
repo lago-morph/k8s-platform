@@ -117,6 +117,10 @@ spec:
   forProvider:
     accessConfig:
       authenticationMode: API_AND_CONFIG_MAP
+    enabledClusterLogTypes:
+      - api
+      - audit
+      - authenticator
     region: us-east-1
     roleArnSelector:
       matchControllerRef: true

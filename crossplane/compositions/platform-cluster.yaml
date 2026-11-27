@@ -318,6 +318,15 @@ spec:
                   # CONFIG_MAP is a one-way but in-place EKS operation).
                   accessConfig:
                     authenticationMode: API_AND_CONFIG_MAP
+                  # Control-plane logs to CloudWatch (kp-2al.45): the API
+                  # audit trail has no kubectl path. EKS writes to
+                  # /aws/eks/<name>/cluster; terraform/management/
+                  # control-plane-logs.tf pre-creates that group with bounded
+                  # retention, because a group EKS creates never expires.
+                  enabledClusterLogTypes:
+                    - api
+                    - audit
+                    - authenticator
                   # roleArnSelector resolves the control-plane role by
                   # matching the labels we set via patches below.
                   roleArnSelector:

@@ -223,6 +223,10 @@ run_suite tests/unit/test_k8p_cognito_user.sh
 # GitHub masks referenced secrets as *** in logs, which broke the ops box's
 # console URL. Also pins the fail-fast guard for an unset variable.
 run_suite tests/unit/test_region_is_a_variable.sh
+# kp-2al.45: EKS control-plane logs (the API audit trail) have no kubectl
+# path; hub and every spoke must ship them to CloudWatch, with bounded
+# retention set in one place (a group EKS creates itself never expires).
+run_suite tests/unit/test_control_plane_logging.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
