@@ -67,6 +67,41 @@ else
   echo "FAIL: fetch script does not use \${ARGOCD_APP_VERSION} for the argoproj CRD URLs"; FAIL=1
 fi
 
+# 3. Every other copy of the Argo CD pin (kp-2al.56: the 6.7.3 -> 10.x bump
+#    found three copies no test held equal).
+#    a. terraform.tfvars.example documents the chart pin.
+TFVARS_EXAMPLE="$ROOT/terraform/management/terraform.tfvars.example"
+example_argocd="$(grep -E '^\s*argocd_version\s*=' "$TFVARS_EXAMPLE" | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ "$example_argocd" = "${ARGOCD_CHART_VERSION:-}" ]; then
+  echo "ok: terraform.tfvars.example argocd_version ($example_argocd) == ARGOCD_CHART_VERSION"
+else
+  echo "FAIL: terraform.tfvars.example argocd_version '$example_argocd' != versions.env ARGOCD_CHART_VERSION '${ARGOCD_CHART_VERSION:-}'"
+  FAIL=1
+fi
+#    b. The helm-render unit test renders the chart terraform installs: it
+#       must take the version from versions.env, never hard-code one.
+HELM_RENDER="$ROOT/tests/unit/test_helm_render.sh"
+if grep -qE '^ARGOCD_VERSION="[0-9]' "$HELM_RENDER"; then
+  echo "FAIL: tests/unit/test_helm_render.sh hard-codes ARGOCD_VERSION ($(grep -E '^ARGOCD_VERSION=' "$HELM_RENDER"));"
+  echo "      it must render \${ARGOCD_CHART_VERSION} from versions.env"
+  FAIL=1
+elif grep -qE '^ARGOCD_VERSION="\$\{?ARGOCD_CHART_VERSION' "$HELM_RENDER"; then
+  echo "ok: test_helm_render.sh renders ARGOCD_CHART_VERSION from versions.env"
+else
+  echo "FAIL: tests/unit/test_helm_render.sh does not set ARGOCD_VERSION from ARGOCD_CHART_VERSION"
+  FAIL=1
+fi
+#    c. The argocd CLI pin (tests/chainsaw/versions.env ARGOCD_VERSION) is the
+#       server's app version — its comment claims parity, so hold it.
+CLI_ENV="$ROOT/tests/chainsaw/versions.env"
+cli_argocd="$(grep -E '^ARGOCD_VERSION=' "$CLI_ENV" | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ "$cli_argocd" = "${ARGOCD_APP_VERSION:-}" ]; then
+  echo "ok: tests/chainsaw/versions.env argocd CLI ($cli_argocd) == ARGOCD_APP_VERSION"
+else
+  echo "FAIL: tests/chainsaw/versions.env ARGOCD_VERSION (argocd CLI) '$cli_argocd' != versions.env ARGOCD_APP_VERSION '${ARGOCD_APP_VERSION:-}'"
+  FAIL=1
+fi
+
 # ── ingress-nginx hub/spoke pair ─────────────────────────────────────────
 # The hub (terraform helm_release, variables.tf `ingress_nginx_version`) and
 # every spoke (ApplicationSet argocd/apps/spoke/ingress-nginx.yaml) install

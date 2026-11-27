@@ -28,7 +28,13 @@ STUB_EDNS_IRSA="arn:aws:iam::000000000000:role/test-external-dns"
 STUB_ACM_ARN="arn:aws:acm:us-east-1:000000000000:certificate/stub"
 
 # Versions match terraform/management/variables.tf defaults.
-ARGOCD_VERSION="6.7.3"
+# Argo CD comes from the single source (versions.env ARGOCD_CHART_VERSION,
+# held equal to variables.tf argocd_version by
+# test_version_pin_consistency.sh), so this render can never test a
+# different chart than the one terraform installs.
+# shellcheck disable=SC1091
+. "$HERE/../../versions.env"
+ARGOCD_VERSION="${ARGOCD_CHART_VERSION}"
 CROSSPLANE_VERSION="2.0.1"   # not rendered here; crossplane has no values
 ESO_VERSION="0.9.13"
 # ingress-nginx is read from its single hub source (variables.tf) rather than

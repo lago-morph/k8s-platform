@@ -29,6 +29,9 @@ run_suite() {
 
 # L31: cross-file version-pin pairs held equal (argo chart/app pin etc.)
 run_suite tests/unit/test_version_pin_consistency.sh
+# kp-2al.56: the Argo CD pin is tested upstream on every deployed Kubernetes
+# version (v2.10 on 1.37: terminatingReplicas ComparisonError).
+run_suite tests/unit/test_argocd_kubernetes_support.sh
 run_suite tests/unit/test_nlb_tls_policy.sh
 run_suite tests/unit/test_compute_gates.sh
 run_suite tests/unit/test_irsa_helm_linkage.sh
