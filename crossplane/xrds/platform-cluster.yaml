@@ -109,14 +109,12 @@ spec:
                 version:
                   type: string
                   description: >-
-                    Kubernetes control plane version. EKS supports the
-                    current minus three minor versions; bumping requires
-                    a node group AMI bump too. Defaults to "1.35" — keep
-                    in sync with terraform/management/variables.tf
-                    (cluster_version) so management and platform
-                    clusters share an upgrade cadence.
+                    Kubernetes control plane version for this cluster.
+                    Required, with no default: each cluster's version is
+                    set in exactly one place, its own XR. (The hub's is
+                    terraform/management/variables.tf cluster_version.)
+                    The node group follows the control plane's version.
                   pattern: "^[0-9]+\\.[0-9]+$"
-                  default: "1.35"
                 dns:
                   type: object
                   description: >-
@@ -144,19 +142,12 @@ spec:
                     - subdomain
                 nodeGroup:
                   type: object
-                  description: Managed node group sizing + instance choice.
+                  description: >-
+                    Managed node group sizing. The instance type is not
+                    set here: every cluster uses
+                    terraform/management var.node_instance_type, read
+                    from the cluster-network EnvironmentConfig.
                   properties:
-                    instanceTypes:
-                      type: array
-                      description: >-
-                        EC2 instance types the managed node group draws
-                        from. Defaults to t3.medium — sized for the
-                        9-instance EC2 quota in this account. Use larger
-                        types in production-grade environments.
-                      items:
-                        type: string
-                      default: ["t3.medium"]
-                      minItems: 1
                     desiredSize:
                       type: integer
                       minimum: 1
@@ -173,12 +164,12 @@ spec:
                       maximum: 20
                       default: 3
                   default:
-                    instanceTypes: ["t3.medium"]
                     desiredSize: 2
                     minSize: 1
                     maxSize: 3
               required:
                 - name
+                - version
                 - dns
             status:
               type: object

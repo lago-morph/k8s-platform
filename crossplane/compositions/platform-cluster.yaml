@@ -306,7 +306,7 @@ spec:
               spec:
                 forProvider:
                   region: us-east-1
-                  version: "1.35"
+                  # version: patched from the XR's spec.version (required).
                   # EKS access entries are the spoke-registration trust
                   # mechanism (XSpokeAccess AccessEntry/AccessPolicyAssociation
                   # + the ArgoCD cluster Secret's exec-auth argocd role). The
@@ -408,8 +408,7 @@ spec:
                     desiredSize: 2
                     minSize: 1
                     maxSize: 3
-                  instanceTypes:
-                    - t3.medium
+                  # instanceTypes: patched from the environment below.
                   tags:
                     ManagedBy: crossplane
                     PlatformAbstraction: PlatformCluster
@@ -432,9 +431,16 @@ spec:
               - type: FromEnvironmentFieldPath
                 fromFieldPath: privateSubnetIds
                 toFieldPath: spec.forProvider.subnetIds
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.nodeGroup.instanceTypes
+              # Node types are set in ONE place for every cluster:
+              # terraform/management var.node_instance_type, published as
+              # nodeInstanceTypes in the cluster-network EnvironmentConfig.
+              # Required: a missing value must fail the render, not let EKS
+              # fall back to its own default type.
+              - type: FromEnvironmentFieldPath
+                fromFieldPath: nodeInstanceTypes
                 toFieldPath: spec.forProvider.instanceTypes
+                policy:
+                  fromFieldPath: Required
               # v2 deviation: scalingConfig is an object (not array).
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodeGroup.desiredSize

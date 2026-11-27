@@ -43,6 +43,7 @@ metadata:
 spec:
   name: k8-platform-workload1
   region: us-east-1
+  # The single place this cluster's Kubernetes version is set.
   version: "1.35"
   dns:
     # Workload1 services are published at <service>.workload1.<domain>; the
@@ -51,9 +52,8 @@ spec:
     # `platform.`).
     subdomain: workload1
   nodeGroup:
-    # t3.medium x 2 — within the 9-instance EC2 quota (hub 2 + platform 2 +
-    # relay 1 + ops box 1 + workload1 2 = 8, 1 headroom).
-    instanceTypes: ["t3.medium"]
+    # Node count only. The instance type is set once for every cluster:
+    # terraform/management/variables.tf node_instance_type.
     desiredSize: 2
     minSize: 1
     maxSize: 3

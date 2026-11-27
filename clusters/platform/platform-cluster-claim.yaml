@@ -39,6 +39,7 @@ metadata:
 spec:
   name: k8-platform-services
   region: us-east-1
+  # The single place this cluster's Kubernetes version is set.
   version: "1.35"
   dns:
     # Platform services are published at <service>.platform.<domain>; the
@@ -46,9 +47,8 @@ spec:
     # cluster is scoped to this subdomain.
     subdomain: platform
   nodeGroup:
-    # m5.large x 2 within the 9-instance EC2 quota in this account (hub 2 +
-    # spoke 2 + relay 1 + ops box 1 = 6, leaving 3 for workload clusters).
-    instanceTypes: ["m5.large"]
+    # Node count only. The instance type is set once for every cluster:
+    # terraform/management/variables.tf node_instance_type.
     desiredSize: 2
     minSize: 1
     maxSize: 3

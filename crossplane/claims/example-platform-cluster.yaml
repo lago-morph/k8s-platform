@@ -37,7 +37,6 @@ spec:
     # *.workload1.<domain>.
     subdomain: workload1
   nodeGroup:
-    instanceTypes: ["t3.medium"]
     desiredSize: 2
     minSize: 1
     maxSize: 3

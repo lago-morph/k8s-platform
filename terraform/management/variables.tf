@@ -27,18 +27,19 @@ variable "cluster_name" {
 }
 
 variable "cluster_version" {
-  description = "Kubernetes version for the management cluster"
+  description = "Kubernetes version for the management (hub) cluster. The single place it is set. Each spoke's version is set in its own XR (spec.version), e.g. clusters/platform/platform-cluster-claim.yaml."
   type        = string
   default     = "1.35"
 }
 
 variable "node_instance_type" {
   description = <<-EOT
-    EC2 instance type for management cluster nodes.
-    Account constraint: m5.large or smaller (see ai/testing-guidelines.md §1).
-    m5.large (2 vCPU / 8 GiB) carries ArgoCD + Crossplane + ESO on two
-    nodes; three t3.medium (4 GiB) nodes were needed before the account
-    allowed m5.large.
+    EC2 instance type for the nodes of EVERY cluster the platform runs: the
+    hub node group here, and every spoke's NodeGroup, which the
+    platform-cluster Composition reads from the cluster-network
+    EnvironmentConfig (nodeInstanceTypes) that this module writes. This is
+    the single place node types are set; XRs carry no instance type.
+    Account constraint: see ai/testing-guidelines.md §1.
   EOT
   type        = string
   default     = "m5.large"

@@ -23,8 +23,11 @@ Adjust the pre-flight checklist if your account differs.
 | Max EBS volume | 100 GB per volume |
 | Max concurrent instances | **9** total across all services |
 
-Management cluster default: `m5.large × 2` (`desired=min=max=2`). The platform
-services spoke is also `m5.large × 2`. If quota bites, drop the node counts.
+Node instance type, for every cluster: `terraform/management/variables.tf`
+`node_instance_type` (default `m5.large`) — the only place it is set. Node
+counts: hub `node_desired_size`/`min`/`max` (2/2/2); each spoke's XR
+`spec.nodeGroup` (platform spoke 2). Kubernetes version: hub
+`cluster_version`; each spoke's XR `spec.version`.
 
 ### Networking / IAM / Other
 

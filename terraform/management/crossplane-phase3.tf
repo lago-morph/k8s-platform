@@ -176,6 +176,9 @@ locals {
       privateSubnetIds = try(data.terraform_remote_state.base.outputs.private_subnet_ids, [])
       route53ZoneId    = try(data.terraform_remote_state.base.outputs.route53_zone_id, "")
       domain           = var.domain
+      # Node instance types for every spoke NodeGroup — the same variable the
+      # hub node group uses (eks.tf), so node types are set in one place.
+      nodeInstanceTypes = [var.node_instance_type]
       # Base-VPC identity for Compositions that place non-EKS resources
       # in-VPC (first consumer: the XDatabase RDS SubnetGroup/SecurityGroup —
       # without these the RDS Instance lands in the account DEFAULT VPC,
