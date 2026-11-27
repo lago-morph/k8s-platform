@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (after tier) — OI-2026-06-08-2 / ADR-0006
 #
 # End-to-end HARD check: a real HTTP request reaches the `hello` workload on the
@@ -156,24 +157,25 @@ ok "https://${HOST}/ returned HTTP 200 with expected body marker after $(($(date
 log "asserting hub ArgoCD Application '$HELLO_APP' Synced+Healthy via SSM relay on $HUB_CLUSTER"
 
 APP_JSON=""; relay_ok=0
+RELAY_ERR="$(mktemp)"
 for attempt in $(seq 1 "$RELAY_ATTEMPTS"); do
   APP_JSON="$("$HELPER" -c "$HUB_CLUSTER" -r "$REGION" --exec \
-                kubectl get application "$HELLO_APP" -n argocd -o json 2>/dev/null)" || true
+                kubectl get application "$HELLO_APP" -n argocd -o json 2>"$RELAY_ERR")" || true
   # A real success: parseable JSON with .status present.
   if [ -n "$APP_JSON" ] && printf '%s' "$APP_JSON" | jq -e '.status' >/dev/null 2>&1; then
     relay_ok=1; break
   fi
+  relay_denied_skip "$RELAY_ERR"
   log "relay attempt $attempt/$RELAY_ATTEMPTS did not return parseable Application JSON for $HUB_CLUSTER; retry in ${RELAY_INTERVAL}s"
   [ "$attempt" -lt "$RELAY_ATTEMPTS" ] && sleep "$RELAY_INTERVAL"
 done
 
 if [ "$relay_ok" -ne 1 ]; then
   log "RELAY UNREACHABLE for $HUB_CLUSTER after $RELAY_ATTEMPTS attempts."
-  log "  → This is a relay/SSM-tunnel failure, NOT evidence that ArgoCD is unhealthy."
-  log "  → Do NOT treat it as a missing/broken Application. Investigate the relay"
-  log "    (scripts/sandbox-kubeconfig.sh); the sandbox holds admin AWS and can"
-  log "    self-grant cluster access (AGENTS §6.37)."
-  skip "hub kube API not reachable for $HUB_CLUSTER after $RELAY_ATTEMPTS relay attempts (tunnel flake — not an ArgoCD absence)"
+  relay_err_tail "$RELAY_ERR"
+  log "  → A relay/SSM-tunnel failure, NOT evidence that ArgoCD is unhealthy."
+  rm -f "$RELAY_ERR"
+  skip "hub kube API not reachable for $HUB_CLUSTER after $RELAY_ATTEMPTS relay attempts (see relay helper stderr above — not an ArgoCD absence)"
 fi
 
 SYNC_STATUS="$(printf '%s' "$APP_JSON" | jq -r '.status.sync.status // "Unknown"')"

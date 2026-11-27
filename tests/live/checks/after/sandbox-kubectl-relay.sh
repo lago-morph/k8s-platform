@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (after tier) — sandbox kubectl reaches the cluster via
 # the shared SSM relay (docs/decisions/0008).
 #

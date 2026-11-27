@@ -153,6 +153,7 @@ run_suite tests/unit/test_verifier_role_no_wildcards.sh
 run_suite tests/unit/test_skip_register.sh
 # burndown item 4: the live suite is WIRED/GATING/SCOPED into terraform-test.yml
 run_suite tests/unit/test_live_suite_wired.sh
+run_suite tests/unit/test_live_relay_hygiene.sh
 # auto-014 P3: account-mutex (DynamoDB lease) lib for serialized mutating runs
 run_suite tests/unit/test_account_mutex.sh
 # auto-014 P3: reaper friendly-fire-proofing decision logic (no AWS, no deletes)

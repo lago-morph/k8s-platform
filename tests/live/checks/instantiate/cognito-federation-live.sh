@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (instantiate tier) — the FULL identity federation
 # path (REQ-AUTH-02/07/08/09/10; the phase-5 e2e oracle):
 #
@@ -310,8 +311,8 @@ elif [ -x "$HELPER" ] && command -v session-manager-plugin >/dev/null 2>&1; then
   # Sandbox path: the egress gateway 503s the private-CA API endpoint —
   # ride the SSM relay (transparent TCP; the real CA verifies end-to-end).
   log "direct API unreachable ($(head -c 120 "$WORK/whoami.err" 2>/dev/null)…) — retrying via the SSM relay"
-  WHOAMI="$("$HELPER" -c "$crossplane_cluster" --exec kubectl --token "$ID_TOKEN" auth whoami -o json 2>/dev/null | sed -n '/^{/,$p' | sed '/^stopped tunnel/d')" \
-    || { ng "kubectl with the federated token failed through the relay too"; exit 1; }
+  WHOAMI="$("$HELPER" -c "$crossplane_cluster" --exec kubectl --token "$ID_TOKEN" auth whoami -o json 2>"$WORK/whoami-relay.err" | sed -n '/^{/,$p' | sed '/^stopped tunnel/d')" \
+    || { ng "kubectl with the federated token failed through the relay too"; relay_err_tail "$WORK/whoami-relay.err"; exit 1; }
 else
   ng "kubectl with the federated token failed: $(head -c 200 "$WORK/whoami.err" 2>/dev/null)"
   exit 1

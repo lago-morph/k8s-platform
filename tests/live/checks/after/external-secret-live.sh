@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (after tier) — ExternalSecrets on the cluster are real
 # and healthy (lane: non-aws, KIND external-secrets.io/ExternalSecret).
 #
@@ -43,24 +44,26 @@ log "driving kubectl get externalsecrets for '$CLUSTER' through the SSM relay"
 RELAY_ATTEMPTS="${LIVE_RELAY_ATTEMPTS:-4}"
 RELAY_INTERVAL="${LIVE_RELAY_INTERVAL:-15}"
 OUT=""; relay_ok=0
+RELAY_ERR="$(mktemp)"
 for attempt in $(seq 1 "$RELAY_ATTEMPTS"); do
   OUT="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec \
-          kubectl get externalsecrets.external-secrets.io -A -o json 2>/dev/null)"
+          kubectl get externalsecrets.external-secrets.io -A -o json 2>"$RELAY_ERR")"
   # A real success is a parseable list (.items present) — distinguishes an empty
   # ExternalSecret set ({"items":[]}) from relay garbage / a half-open tunnel.
   if [ -n "$OUT" ] && printf '%s' "$OUT" | jq -e '.items' >/dev/null 2>&1; then
     relay_ok=1; break
   fi
+  relay_denied_skip "$RELAY_ERR"
   log "relay attempt $attempt/$RELAY_ATTEMPTS did not return a parseable list for $CLUSTER; retry in ${RELAY_INTERVAL}s"
   [ "$attempt" -lt "$RELAY_ATTEMPTS" ] && sleep "$RELAY_INTERVAL"
 done
 
 if [ "$relay_ok" -ne 1 ]; then
   log "RELAY UNREACHABLE for $CLUSTER after $RELAY_ATTEMPTS attempts."
-  log "  → This is a relay/SSM-tunnel failure, NOT evidence that ExternalSecrets are absent."
-  log "  → Do NOT count it as '0 found'. Investigate the relay (scripts/sandbox-kubeconfig.sh);"
-  log "    the sandbox holds admin AWS and can self-grant cluster access (AGENTS §6.37)."
-  skip "kube API not reachable for $CLUSTER after $RELAY_ATTEMPTS relay attempts (tunnel flake — not an absence)"
+  relay_err_tail "$RELAY_ERR"
+  log "  → A relay/SSM-tunnel failure, NOT evidence that ExternalSecrets are absent."
+  rm -f "$RELAY_ERR"
+  skip "kube API not reachable for $CLUSTER after $RELAY_ATTEMPTS relay attempts (see relay helper stderr above — not an absence)"
 fi
 
 TOTAL="$(printf '%s' "$OUT" | jq '.items | length')"

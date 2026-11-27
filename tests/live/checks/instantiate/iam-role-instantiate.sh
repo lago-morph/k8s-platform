@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (instantiate tier) — CREATE a real IAM Role through the
 # Crossplane controller, prove it converged + the real AWS role exists, then
 # ALWAYS delete it (FINAL-PLAN §P4; ADR-0006).
