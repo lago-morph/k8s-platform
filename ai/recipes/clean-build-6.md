@@ -89,8 +89,10 @@ still points at the direct endpoint. `--stop` kills the process group.
 admin; the skill's cluster-admin self-grant exists for mutating test
 tiers only — **never use it to clear a build blocker**.
 
-Argo CD credentials come from terraform outputs
-(`argocd_server_url`, `argocd_admin_password`), never from the
+Argo CD credentials: the URL from the `argocd_server_url` terraform
+output, the admin password from AWS Secrets Manager
+(`k8-platform/management/argocd-admin`, authoritative since kp-2al.44;
+`scripts/k8p-argocd-password.sh show --reveal`), never from the
 initial-admin Secret. The sync form below needs only kubectl; the
 `argocd` CLI installs in some sessions and not others
 (`ai/environment.md` §3), so the kubectl form is the recipe.

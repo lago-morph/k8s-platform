@@ -180,6 +180,21 @@ data "aws_iam_policy_document" "opsbox" {
     resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:k8-platform/*"]
   }
 
+  # Changing the Argo CD admin password is a documented admin action
+  # (scripts/k8p-argocd-password.sh, kp-2al.44): it writes a new version of
+  # the one secret that holds it, and moves AWSCURRENT back if Argo CD cannot
+  # be moved with it. Write access is scoped to that secret alone (the -*
+  # matches the random suffix ASM appends to every secret ARN).
+  statement {
+    sid    = "ChangeArgoCDAdminPassword"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:UpdateSecretVersionStage",
+    ]
+    resources = ["arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:k8-platform/management/argocd-admin-*"]
+  }
+
   # Creating an end-user directory account is a documented admin action
   # (docs/site/how-to/admin-access.md §4), so the box can perform it.
   # scripts/k8p-cognito-user.sh also removes and lists accounts, hence

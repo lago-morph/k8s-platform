@@ -10,8 +10,10 @@ CI. So the reusable CI-driven sync mechanism is delivered here for a maintainer
 
 ## What it does
 
-Reads the ArgoCD admin credential from the management Terraform state in S3 and
-runs `argocd app sync <app>` from a GitHub-hosted runner (which has unrestricted
+Reads the ArgoCD admin credential from AWS Secrets Manager
+(`k8-platform/management/argocd-admin`, the authoritative copy since kp-2al.44;
+change it with `scripts/k8p-argocd-password.sh`) and the server URL from the
+management Terraform state in S3, and runs `argocd app sync <app>` from a GitHub-hosted runner (which has unrestricted
 egress + the AWS secrets). This is the AGENTS §10.1 method. Reusable for
 `platform-cluster-claim` (phase 3) and every spoke add-on app (phases 3-6).
 
@@ -63,16 +65,20 @@ jobs:
           sudo install -m 0755 /tmp/argocd /usr/local/bin/argocd
           argocd version --client --short
 
-      - name: Read ArgoCD credential from Terraform state (§10.1)
+      - name: Read ArgoCD credential from ASM (§10.1, kp-2al.44)
         run: |
           set -euo pipefail
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           STATE="s3://k8-platform-tfstate-${ACCOUNT}/k8-platform/management/terraform.tfstate"
           aws s3 cp "$STATE" /tmp/mgmt.tfstate >/dev/null
           URL=$(jq -r '.outputs.argocd_url.value // .outputs.argocd_server_url.value' /tmp/mgmt.tfstate)
-          PW=$(jq -r '.outputs.argocd_admin_password.value' /tmp/mgmt.tfstate)
-          if [ -z "$URL" ] || [ "$URL" = "null" ] || [ -z "$PW" ] || [ "$PW" = "null" ]; then
-            echo "FAIL: argocd_url / argocd_admin_password not found in management state"; exit 1
+          # ASM is authoritative; the state's argocd_admin_password output is
+          # only a mirror as of the last refresh and goes stale after a change.
+          PW=$(aws secretsmanager get-secret-value \
+                 --secret-id k8-platform/management/argocd-admin \
+                 --query SecretString --output text)
+          if [ -z "$URL" ] || [ "$URL" = "null" ] || [ -z "$PW" ]; then
+            echo "FAIL: argocd_url (management state) or k8-platform/management/argocd-admin (ASM) not found"; exit 1
           fi
           echo "::add-mask::$PW"
           echo "ARGOCD_HOST=${URL#https://}" >> "$GITHUB_ENV"

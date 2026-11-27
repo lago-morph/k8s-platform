@@ -83,10 +83,13 @@ design — discover it live, never hardcode it (enforced:
   workflows; the SSM relay; or diagnose via the **cloud API** — ENI/IP counts
   for pod density, CloudWatch for load, EKS API for cluster/nodegroup health.
   Label cloud-API-derived facts as such.
-- **ArgoCD**: Terraform exposes `argocd_admin_password` / `argocd_server_url`
-  as outputs precisely so a session can drive it (`argocd login` + `app
-  sync`/`get`) — read them from state via CI, never depend on
-  `argocd-initial-admin-secret` or hand the owner a "click Sync" step.
+- **ArgoCD**: the admin password lives in AWS Secrets Manager,
+  `k8-platform/management/argocd-admin` (authoritative, kp-2al.44; change it
+  only with `scripts/k8p-argocd-password.sh`), and Terraform exposes
+  `argocd_server_url`, so a session can drive it (`argocd login` + `app
+  sync`/`get`). The `argocd_admin_password` output is a mirror as of the last
+  refresh, stale after a change. Never depend on `argocd-initial-admin-secret`
+  or hand the owner a "click Sync" step.
 
 ## 5. Toolchain & capability checklist
 

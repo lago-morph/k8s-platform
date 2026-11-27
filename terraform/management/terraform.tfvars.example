@@ -24,7 +24,7 @@ availability_zones = ["us-east-1a", "us-east-1b"]
 # provider-aws-secretsmanager v2.5.0, function-patch-and-transform v0.10.6.
 # Keep these in sync with terraform/management/variables.tf defaults so a
 # fresh local clone does not silently downgrade to the v1.x packages.
-argocd_version                                  = "6.7.3"
+argocd_version                                  = "10.20.0"
 crossplane_version                              = "2.3.0"
 crossplane_provider_family_aws_version          = "v2.5.0"
 crossplane_provider_aws_secretsmanager_version  = "v2.5.0"

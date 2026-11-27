@@ -39,18 +39,28 @@ output "argocd_url" {
   value       = "https://argocd.management.${var.domain}"
 }
 
-# ArgoCD driving credentials (AGENTS §10.1) — read via
-#   terraform -chdir=terraform/management output -raw argocd_server_url
-#   terraform -chdir=terraform/management output -raw argocd_admin_password
-# then `argocd login "$URL" --username admin --password "$PW" --grpc-web`
-# to sync/query Applications from CI without standing cluster creds.
+# ArgoCD driving credentials (AGENTS §10.1). The admin password's
+# AUTHORITATIVE home is AWS Secrets Manager (kp-2al.44), the secret named by
+# argocd_admin_secret_name. Read it there:
+#   scripts/k8p-argocd-password.sh show --reveal
+#   aws secretsmanager get-secret-value \
+#     --secret-id k8-platform/management/argocd-admin --query SecretString --output text
+# and change it only with `scripts/k8p-argocd-password.sh set`.
 output "argocd_server_url" {
   description = "ArgoCD server URL for `argocd login` (AGENTS §10.1)."
   value       = "https://argocd.management.${var.domain}"
 }
 
+output "argocd_admin_secret_name" {
+  description = "AWS Secrets Manager secret holding the ArgoCD admin password (user admin). Authoritative; change it with scripts/k8p-argocd-password.sh."
+  value       = aws_secretsmanager_secret.argocd_admin.name
+}
+
+# Kept so existing readers keep working, but it is a MIRROR of ASM's
+# AWSCURRENT as of the last plan/refresh: not the seed, and not live. After a
+# scripted change it is stale until the next apply or refresh; prefer ASM.
 output "argocd_admin_password" {
-  description = "ArgoCD admin password for `argocd login` (AGENTS §10.1)."
-  value       = random_password.argocd_admin.result
+  description = "Mirror of the ASM ArgoCD admin password as of the last refresh. ASM (argocd_admin_secret_name) is authoritative."
+  value       = data.aws_secretsmanager_secret_version.argocd_admin.secret_string
   sensitive   = true
 }

@@ -117,9 +117,9 @@ variable "availability_zones" {
 }
 
 variable "argocd_version" {
-  description = "ArgoCD Helm chart version"
+  description = "ArgoCD Helm chart version (argo-helm argo-cd). Held equal to versions.env ARGOCD_CHART_VERSION by tests/unit/test_version_pin_consistency.sh; 10.20.0 ships Argo CD v3.6.3."
   type        = string
-  default     = "6.7.3"
+  default     = "10.20.0"
 }
 
 variable "crossplane_version" {

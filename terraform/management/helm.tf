@@ -602,6 +602,17 @@ resource "helm_release" "argocd" {
     name  = "controller.podAnnotations.k8-platform\\.io/irsa-rev"
     value = "auto-012"
   }
+  # Argo CD 3.0 stopped persisting each resource's health in the Application
+  # CR (.status.resources[].health is empty unless this is on).
+  # scripts/argocd-apps.sh and .github/workflows/phase-2-diagnose.yml read
+  # per-resource health with kubectl — the supported read path from the
+  # sandbox — so keep the 2.x behaviour (kp-2al.56). The hub manages a few
+  # hundred resources; the extra status writes are negligible here.
+  set {
+    name  = "configs.params.controller\\.resource\\.health\\.persist"
+    value = "true"
+    type  = "string"
+  }
   # Ingress configured here so no separate kubernetes_ingress_v1 resource is
   # needed (which would require the kubernetes provider at plan time).
   set {
