@@ -467,6 +467,58 @@ spoke-side reads are not part of this page.
   workflow's `verify` action re-runs the self-test and reprints the
   console URL without re-applying.
 
+## Connect kubectl to the clusters
+
+When the status screen is green, give your own `kubectl` a context for
+each cluster and check that each API answers:
+
+```bash
+k8p-kubeconfig.sh                        # on the ops box (it is on PATH)
+scripts/k8p-kubeconfig.sh                # from a checkout on a workstation with AWS credentials
+```
+
+It finds the platform's clusters in the current account and region
+(`-r <region>` to choose; otherwise your AWS configuration, then
+`us-east-1`). A cluster counts as the platform's if it carries the tag
+`Project=k8-platform` (the hub) or `PlatformAbstraction=PlatformCluster`
+(a spoke), or, failing tags, if its name starts with `k8-platform-`. The
+script prints which rule matched. For each one it writes a context named
+after the cluster (`k8-platform-mgmt`, `k8-platform-services`), then
+runs four read-only checks: the API's `/readyz`, `get nodes` with a
+Ready count, `auth can-i`, and `auth whoami`. Options: `--kubeconfig
+<path>` writes to a separate file instead of `~/.kube/config`, `--only
+<cluster>` handles one cluster, `--no-tests` only writes the contexts.
+The cluster APIs are public endpoints, so no VPN or relay is involved.
+
+Good output has a `PASS` line for `/readyz` and for nodes on every
+cluster, and ends in:
+
+```text
+Summary (<account>/<region>)
+  k8-platform-mgmt  REACHABLE  nodes 2/2 Ready  identity arn:aws:...
+  k8-platform-services  REACHABLE  nodes 3/3 Ready  identity arn:aws:...
+
+RESULT: PASS  2/2 platform clusters reachable
+```
+
+The `can-i` lines are `INFO`, not `PASS` or `FAIL`, because access
+differs by cluster on purpose. The identity that created the hub is
+cluster-admin there. On the spoke, `cloud_user` has a read-only access
+entry (`AmazonEKSAdminViewPolicy`), so `can-i create namespaces: no` is
+correct. A cluster fails only if its API does not answer or its nodes
+cannot be read. Then the script exits non-zero and says `UNREACHABLE`
+(the network or the endpoint) or `UNAUTHORIZED` (the API answered but
+your identity has no access entry). The ops box's own role has no
+access entry on the spoke (see the diagnostics section above), so on
+the box the spoke reports `UNAUTHORIZED`. That is expected. Do not add
+an access entry by hand to make it pass. If no clusters exist yet, the
+script says `no platform clusters found in <account>/<region>`.
+
+*Unverified:* the script has been tested only against stubbed `aws`
+and `kubectl` (`tests/unit/test_k8p_kubeconfig.sh`). Nobody has run it
+against a live build yet, and the tag-based discovery depends on tags
+read from the Terraform and the Composition, not from a live cluster.
+
 ## When you are done with this account
 
 Taking the platform back to nothing is its own ordered procedure, and
