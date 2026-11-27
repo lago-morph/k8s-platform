@@ -47,7 +47,9 @@ stage "hello endpoint 200"     check_endpoint    "https://hello.platform.${dom:-
 
 printf '\n'
 if [ "$FAILED" -eq 0 ]; then
-  printf '%s  ALL GREEN%s — the platform is up and serving.\n\n' "$C_BOLD$C_GREEN" "$C_OFF"
+  printf '%s  ALL GREEN%s — the platform is up and serving.\n' "$C_BOLD$C_GREEN" "$C_OFF"
+  printf '  Next: %sk8p-kubeconfig.sh%s adds a kubectl context per cluster and tests the API.\n\n' \
+    "$C_BOLD" "$C_OFF"
 else
   printf '%s  NOT COMPLETE%s — run %sk8p-bringup.sh%s to continue from here.\n\n' \
     "$C_BOLD$C_YELLOW" "$C_OFF" "$C_BOLD" "$C_OFF"

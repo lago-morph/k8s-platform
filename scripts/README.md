@@ -25,6 +25,7 @@ All scripts:
 | `kyverno-violations.sh` | PolicyReport violations across all namespaces. **Dormant** — see above. |
 | `argocd-apps.sh` | ArgoCD Application/AppProject status. |
 | `route53-records.sh` | List record sets in the discovered hosted zone. |
+| `k8p-kubeconfig.sh` | Installer step: discovers the platform's EKS clusters (tags, else `k8-platform-` prefix), writes a kubectl context named after each, and tests `/readyz`, `get nodes`, `can-i`, `whoami` with PASS/FAIL lines. Also on the ops box `PATH` via `scripts/opsbox/`. Writes kubeconfig entries only. |
 | `aws-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
 | `irsa_trust_validator.py` | IRSA trust-policy vs SA fleet sweep; `--all --ci` for gating, `--role <arn>` for targeted triage. |
 | `wait-for-claim.sh` | Polls a Crossplane claim's `Ready=True`; dumps conditions+events on timeout (SPEC-S7). |
