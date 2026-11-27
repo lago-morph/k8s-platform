@@ -23,6 +23,8 @@ controller:
       # Templated by the ApplicationSet's valuesObject at sync time:
       service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "PLACEHOLDER_OVERRIDDEN_BY_APPLICATION"
       service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+      # Owner rule 2026-11-27: TLS 1.2 or better, negotiated (TLS 1.3 + 1.2).
+      service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy: "ELBSecurityPolicy-TLS13-1-2-2021-06"
       service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
     targetPorts:
       # NLB :443 decrypts TLS and proxies to nginx's plain HTTP port (http=80),

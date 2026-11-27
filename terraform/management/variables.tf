@@ -263,10 +263,15 @@ variable "eso_version" {
   default     = "0.9.13"
 }
 
+# 4.15.1 (controller v1.15.1) is the LAST upstream release — the project is
+# retired; replacing the controller is a separate v2.0 item. Moved from 4.10.0
+# for CVE-2025-1974 (IngressNightmare) and CVE-2025-1097/1098/24513/24514.
+# The spoke ApplicationSet (argocd/apps/spoke/ingress-nginx.yaml) pins the
+# same chart; tests/unit/test_version_pin_consistency.sh holds them equal.
 variable "ingress_nginx_version" {
-  description = "ingress-nginx Helm chart version"
+  description = "ingress-nginx Helm chart version (hub; must equal the spoke ApplicationSet targetRevision)"
   type        = string
-  default     = "4.10.0"
+  default     = "4.15.1"
 }
 
 variable "external_dns_version" {

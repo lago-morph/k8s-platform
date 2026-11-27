@@ -38,6 +38,12 @@ resource "helm_release" "ingress_nginx" {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-ports"
     value = "443"
   }
+  # Owner rule 2026-11-27: TLS 1.2 or better, negotiated with the client
+  # (TLS 1.3 + 1.2). Without this the NLB's default policy applies.
+  set {
+    name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-ssl-negotiation-policy"
+    value = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  }
   set {
     name  = "controller.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-backend-protocol"
     value = "http"

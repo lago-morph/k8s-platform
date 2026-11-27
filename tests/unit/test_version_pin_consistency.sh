@@ -67,5 +67,37 @@ else
   echo "FAIL: fetch script does not use \${ARGOCD_APP_VERSION} for the argoproj CRD URLs"; FAIL=1
 fi
 
+# ── ingress-nginx hub/spoke pair ─────────────────────────────────────────
+# The hub (terraform helm_release, variables.tf `ingress_nginx_version`) and
+# every spoke (ApplicationSet argocd/apps/spoke/ingress-nginx.yaml) install
+# the SAME controller from the same chart. Neither file can source the other,
+# so this lint holds them equal: a bump that moves one side leaves the other
+# on a controller with different CVE exposure and different admission
+# behaviour (kp-uvy.10: 4.10.0 -> 4.15.1 changed annotation validation and
+# path-type strictness — the hub and spokes must never disagree on that).
+# terraform.tfvars.example documents the same pin and must not drift either.
+tf_ingress="$(awk '/variable "ingress_nginx_version"/,/^}/' "$TF_VARS" \
+  | grep -E '^\s*default' | sed -E 's/.*"([^"]+)".*/\1/')"
+SPOKE_APPSET="$ROOT/argocd/apps/spoke/ingress-nginx.yaml"
+spoke_ingress="$(yq -r '.spec.template.spec.sources[] | select(.chart=="ingress-nginx") | .targetRevision' "$SPOKE_APPSET" 2>/dev/null)"
+TFVARS_EXAMPLE="$ROOT/terraform/management/terraform.tfvars.example"
+example_ingress="$(grep -E '^\s*ingress_nginx_version\s*=' "$TFVARS_EXAMPLE" | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ -z "$tf_ingress" ]; then
+  echo "FAIL: could not read variables.tf ingress_nginx_version default"; FAIL=1
+elif [ "$spoke_ingress" = "$tf_ingress" ]; then
+  echo "ok: spoke ApplicationSet ingress-nginx targetRevision ($spoke_ingress) == hub variables.tf default"
+else
+  echo "FAIL: ingress-nginx hub/spoke split: variables.tf default '$tf_ingress'"
+  echo "      != argocd/apps/spoke/ingress-nginx.yaml targetRevision '$spoke_ingress'."
+  echo "      Hub and spoke run one controller version; bump both together."
+  FAIL=1
+fi
+if [ -n "$tf_ingress" ] && [ "$example_ingress" = "$tf_ingress" ]; then
+  echo "ok: terraform.tfvars.example ingress_nginx_version ($example_ingress) == variables.tf default"
+else
+  echo "FAIL: terraform.tfvars.example ingress_nginx_version '$example_ingress' != variables.tf default '$tf_ingress'"
+  FAIL=1
+fi
+
 [ "$FAIL" -eq 0 ] && echo "PASS: version-pin consistency" || echo "FAILED"
 exit "$FAIL"
