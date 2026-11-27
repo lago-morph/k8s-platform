@@ -215,6 +215,10 @@ run_suite tests/unit/test_opsbox_bringup.sh
 # FAIL (and exit non-zero) for an unreachable cluster, say so when there are
 # no clusters, and never print a credential.
 run_suite tests/unit/test_k8p_kubeconfig.sh
+# kp-2al.43: k8p-cognito-user.sh adds/removes/lists directory accounts. The
+# password must never reach output (except the one labelled --generate line)
+# or any process argv; every change is followed by a verification read.
+run_suite tests/unit/test_k8p_cognito_user.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
