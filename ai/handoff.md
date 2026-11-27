@@ -9,44 +9,29 @@ shortest time — is in the epic: `bd show kp-2al`.** Keep this file short:
 replace stale facts, never append narrative. The pre-2026-09-08 handoff
 is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
-## Build #9 (`kp-2al.34`) — state at 2026-09-12
+## Build #10 — the owner's bring-up, 2026-11-27
 
-The ops box drove a from-scratch build on a NEW account
-(`851725259254`, us-east-1; nothing in it but the hosted zone). Branch <!-- noqa: account-id - run provenance, account rotates -->
-`claude/vibrant-newton-rtrlbw`, PR open against `main`.
+The owner executed `docs/site/how-to/build-the-platform-from-nothing.md`
+on a fresh account (`637423636571`, us-east-1) from `main` <!-- noqa: account-id - run provenance, account rotates -->
+`35eee974c79fbe0c49359352f44a03aced3ddce4` (kp-2al.10, closed). The
+account has since **timed out**; nothing is running anywhere.
 
-| Fact | Value | Evidence |
-|---|---|---|
-| platform SHA | `main` `b41f48cdc0e7a532da4c69305d41133bf822e541` for probe, base, management and BOTH gate syncs | driver log on the box (`gate SHA — b41f48c…`, both operations `Succeeded` at it) |
-| ops box + scripts | the feature branch: `31c812a` (workflow fix, written through jentic) → `434c71d` → `a8553d6`/`b9e84bf` (settled-state check) → `9011d56` (Route53-resolved endpoint check) | `git log` |
-| probe | 34672814841, red by design: creds 3/3, zone 4/4, state-backend 0/2 | run log |
-| Ops box `apply` | 34673149665 (2m18s, first green self-test ever) and 34673716297 (the re-apply for the IAM change, 45 s; self-test again green, instance not replaced) | run logs; SSM commands `ca3a29a5…`, `5181b4d2…` |
-| base | 34673406430, success, 3m14s | run |
-| management | 34673599867, success, 18m42s | run |
-| driver stages | management detected 896 s after the driver asked; `crossplane-resources` settled 176 s; gate 1 14m31s; gate 2 4m00s; converged 4m47s; first pass STOPPED on the endpoint (negative DNS cache, see below); re-run at `9011d56` → `BRING-UP COMPLETE` in 2 s; `k8p-status.sh` ALL GREEN, exit 0 | `/var/log/k8p-bringup{.1,,.2}.log` on the box |
-| endpoints | hello HTTP 200 in 0.47 s with the expected body (sandbox) and 200 pinned to the Route53 target (box); Argo CD HTTP 200 from both | operator measurement 05:37Z–05:42Z |
-| Live verify | **34676173964**, profile `full`, dispatched 05:40:16Z on `main` — success 05:55:02Z (14m46s), `pass=17 skip=12 fail=0 expect-full-violations=0 checks=29`, evidence artifact 10292837259 | run |
-| spoke access from the sandbox | `cloud_user` on the spoke: `auth can-i delete svc -n ingress-nginx` → `no`; `get pvc -A` → `yes` (3 PVCs). The committed platform grants it AdminView only | relay probe 05:44Z |
+| Fact | Value |
+|---|---|
+| Ops box `apply` | 45939416156 |
+| base / management | 45940909805 / 45941267372 |
+| driver | `k8p-bringup.sh` BRING-UP COMPLETE 06:57:31Z, gate SHA `35eee97`, hello 200 |
+| Session Manager | browser shell opened by a person from the console: `uid=1001(ssm-user)` in the `k8-platform` checkout |
+| Live verify (old producer) | 45955338643: `pass=17 skip=12 fail=0` |
+| the 12 skipped, owner-run | RUN_ID `owner-1127-0715`, mutating, harness `35eee97`: 12/12 PASS, 308 s |
+| Live verify (new producer, PR #278) | 45959888007 at `ee427fc`: `pass=29 skip=0 fail=0`, 1m36s; 45960453458 after #277 merged: `pass=29 skip=0` |
+| shape | hub 3× t3.medium, spoke 2× t3.medium on Kubernetes 1.32 (built before #277) |
+| finding | console URL region masked as `***` (kp-2al.36) |
 
-**Two driver defects found and fixed on this build** (both optimistic
-direction, both with red-first unit tests, both re-verified live):
-
-| Defect | Evidence | Fix |
-|---|---|---|
-| `check_base` GREEN 46 s into the base apply | certificate ISSUED 04:36:01Z, pool 04:36:02Z; apply wrote state 04:38:33Z | phase checks require the state object present and its DynamoDB lock item absent; probed live: base settled, management held mid-apply (`a8553d6`, `b9e84bf`) |
-| `check_endpoint` RED past its 600 s budget on a serving platform | box: `Could not resolve host hello.platform…`; sandbox: 200 at the same minute; `argocd.management` (35 min older) resolved from the box | read the A record from Route53, resolve the alias target's own name, `curl --resolve` (`9011d56`) |
-
-**Account state at handoff: the platform is UP and the ops box is
-running. TEARDOWN NOT EXECUTED** — the sandbox's permission mode refused
-the deletion commands (Kubernetes deletes, `terraform destroy`, the state
-bucket). Owner decision needed: run
-`docs/site/how-to/tear-the-platform-down.md` (its stage 2/3 on the spoke
-need a spoke admin; the AWS-API fallbacks cover them), then **Ops box →
-`destroy`**, then step 7 (delete the backend) so the account is fresh for
-`kp-2al.10` — or grant the permission and let a session do it.
-
-Running instances: hub 3× `t3.medium`, spoke 2× `t3.medium`, relay
-`t3.nano`, ops box `t3.small` (`i-07ca93c3d6924484f`, us-east-1d).
+Merged since: PR #277 (`ceccbd8`, 2× m5.large, node type and version
+single-sourced, spoke 1.35; Live-evidence gate red by owner exception,
+kp-ifh) and PR #278 (`738e12a`, Live verify full verdict). Neither the
+m5.large shape nor spoke 1.35 has run on a build yet.
 
 ## Environment state
 
@@ -56,8 +41,9 @@ build is in progress, record the chain here as facts (probe → base →
 management → gate SHAs → oracle RUN_ID → live-verify run ID) and move
 them into `SUBSTRATE-READINESS.md` when the build completes.
 
-Build #9 (2026-09-12): every phase APPLIED on `851725259254`; chain in <!-- noqa: account-id - run provenance, account rotates -->
-the table above and in `SUBSTRATE-READINESS.md`.
+No account is live (2026-11-27). Build #10 ran on `637423636571`, which <!-- noqa: account-id - run provenance, account rotates -->
+has timed out; build #9's `851725259254` is gone too. Build records are <!-- noqa: account-id - run provenance, account rotates -->
+in `SUBSTRATE-READINESS.md`.
 
 Build #8 state as verified 2026-09-10 (NEW account, us-east-1 — a
 genuinely fresh account, not a reset one; built entirely from `main`

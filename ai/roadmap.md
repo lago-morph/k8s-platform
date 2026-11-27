@@ -35,8 +35,10 @@ Consequences:
   the refactor.
 - Security fixes are immediate only when exploitable from the public
   internet; all other security hygiene is step 6 or v2.0.
-- The admin is assumed to have direct VPC access (their own VPN). A
-  platform-provisioned VPN is v2.0.
+- **Admin access is over the internet (owner, 2026-11-27; supersedes the
+  2026-09-09 VPN ruling).** The cluster API endpoints are public by
+  design; an admin reaches both clusters from anywhere with AWS
+  credentials. No VPN is assumed or planned.
 
 ## The steps
 
@@ -44,7 +46,8 @@ Consequences:
 |---|---|---|---|
 | 1 | Small cleanups from the 2026-09-08 re-verification | PR #262 merged | Fable (done) |
 | 2 | Replan: this file, a short handoff, beads seeded, hooks | PR #263 merged; `bd ready` shows step 3 | Fable |
-| 3 | **Feature complete**: clean build #6, every classed defect fixed and minimally tested, the three testability gaps documented | Definition below met, evidence by run ID | Opus, beads |
+| 3 | **Feature complete**: clean build #6, every classed defect fixed and minimally tested, the three testability gaps documented | Definition below met, evidence by run ID; last act: Claude's fresh build on a new account (kp-2al.48) | Opus, beads |
+| 3.1 | **Version currency and pinning** (owner, 2026-11-27): every pinned component to current stable, one major version at a time; pin everything unpinned; Keycloak on the official image | Epic `kp-uvy` met; a shake-out build green | planned at its gate (`kp-uvy.1`) |
 | 4 | Admin and tenant documentation of the design **as it is**, gaps named honestly | Docs site pages `stable` | beads-assigned models |
 | 5 | Pass-1 end-to-end tests in a hold-out repo (admin, tenant, end-user), run from an EC2 instance inside the VPC; fix what they find | Suite green against a clean build, with v2.0 gaps as expected findings | beads-assigned models |
 | 6 | **Cleanup**: known non-blocking issues, CI and static hygiene, non-internet-exploitable security hygiene; re-evaluate the v2.0 bucket, decide on a v1.1 | Bucket triaged; v1.1 decided | owner + models |
@@ -56,6 +59,8 @@ documented, because the step 5 suite is the safety net that makes
 refactoring cheap. Retrospectives stay unharvested until the owner asks.
 
 **Steps are planned one at a time.** Only step 3 is planned in detail.
+Step 3.1 (inserted 2026-11-27) runs after step 3 closes and before
+step 4; it does not block closing step 3.
 Each later step opens with a collaborative planning session with the
 owner (a `gate` bead every child depends on); the beads under steps 4 to
 7 today are sketches labelled `sketch` and are not the plan.
@@ -80,12 +85,30 @@ at least minimally tested.* Operationally:
    inventory shows nothing non-green except rows it marks *by design*,
    and each fix ships with a test at the closest layer.
 5. **The three testability gaps are documented** (no new code): the
-   admin access page (cluster access from the VPC, the Argo CD password,
+   admin access page (cluster access over the public endpoints, the Argo CD password,
    the platform facts); the CI-dispatch build path declared the supported
    human build with the workstation runbook demoted to unverified; the
    database ticket runbook (admin places XDatabase plus a PushSecret to
    the tenant's Secrets Manager path, tenant consumes with an
    ExternalSecret).
+
+6. **Added by the owner, 2026-11-27:**
+   - Kubernetes **1.37** on every cluster, with the same version in the
+     local kind cluster (kp-2al.41).
+   - Installer tooling: a script that writes kubectl entries for every
+     cluster the build created and runs basic API connectivity tests
+     (kp-2al.42); scripts to add a Cognito admin user (kp-2al.43) and to
+     change the Argo CD admin password, which lives in Secrets Manager
+     as the single source of truth (kp-2al.44).
+   - Logs that cannot be reached any other way are made reachable
+     (kp-2al.45). Monitoring otherwise is **not** a step 3 concern.
+   - CI Live verify is a full verdict: all checks run, and an
+     unregistered skip fails the run (done, PR #278, kp-2al.37).
+   - **Exit:** Claude builds the platform from `main` on a brand-new
+     account and Live verify reads every check passing (kp-2al.48).
+     Earlier test builds are fine; the final one is clean.
+   - The human-executed bring-up is done: the owner ran the bring-up
+     page on 2026-11-27 (kp-2al.10 closed); no further manual run.
 
 ## How a human builds it today (honest assessment, 2026-09-09)
 
@@ -97,7 +120,12 @@ Every clean build used this path. There is no CLI and no single build
 script; `scripts/` holds read-only diagnostics. The copy/paste Terraform
 runbook in the docs site has never been executed by a person. The SSM
 relay exists only because the sandbox cannot reach the API servers; an
-admin on the VPN does not need it.
+admin uses the public endpoints and does not need it.
+
+**Update 2026-11-27:** the supported human path is now the ops box
+(`docs/site/how-to/build-the-platform-from-nothing.md`): four workflow
+runs and `k8p-bringup.sh`. The owner executed it end to end on a fresh
+account on 2026-11-27 (run IDs in `SUBSTRATE-READINESS.md`).
 
 ## Classification of open issues
 
@@ -124,7 +152,11 @@ explicit ruling.
 | OI-2026-06-07-8 | Jentic capstone | owner | Revisit after 2026-09-20 |
 | LESSONS S2 | Scoped sandbox credentials | cleanup (security hygiene) | Mechanism decision owed |
 | v1 naming residue | `platform-cluster-claim`, `claim-*` chainsaw dirs | step 7 | Rename during the refactor |
-| VPN, public API endpoints off, tenant self-service onboarding | — | v2.0 | Owner rulings 2026-09-09 |
+| Tenant self-service onboarding | — | v2.0 | Owner ruling 2026-09-09 |
+| VPN / public API endpoints off | — | dropped | Owner 2026-11-27: public endpoints are the design (source-CIDR hardening, if wanted, is a step 6 owner decision) |
+| ingress-nginx retired upstream | — | 3.1 + v2.0 | 3.1 moves to its last release; replacing the controller is v2.0 (`kp-caz.8`) |
+| Monitoring does not deliver hub metrics/logs or spoke logs | — | step 5 prep | Owner 2026-11-27: set up early in step 5 so scenario runs can be watched (`kp-e5n.10`); only logs reachable no other way are step 3 (kp-2al.45) |
+| Component versions behind; some dependencies unpinned | — | 3.1 | Epic `kp-uvy` |
 
 Resolved entries stay in the archived register for the rationale record.
 
@@ -138,6 +170,10 @@ Resolved entries stay in the archived register for the rationale record.
 | Keycloak realm broker | present since clean build #6 (imported on the fresh Keycloak DB) | achieved — federation oracle PASS on build #6, RUN_ID `build6-2220` (rows 10/11 DONE) |
 
 ## Step 5 shape (decided 2026-09-09)
+
+**Prep (owner, 2026-11-27):** before the scenario runs, set up monitoring
+good enough to watch them (metrics and logs from both clusters, reachable
+in Grafana), bead `kp-e5n.10`, planned at the step 5 gate.
 
 Tests run from a small EC2 instance inside the base VPC, reached through
 Session Manager, as plain scripts: a person debugs by opening a shell and
