@@ -30,8 +30,9 @@ module "eks" {
   # Enable OIDC provider — required for IRSA.
   enable_irsa = true
 
-  # VPC-CNI as a managed addon with PREFIX DELEGATION. The account caps nodes at
-  # t3.medium, whose default max-pods is ~17 (3 ENIs x 6 IPs). The management
+  # VPC-CNI as a managed addon with PREFIX DELEGATION. Introduced when nodes were
+  # t3.medium, whose default max-pods is ~17 (3 ENIs x 6 IPs); m5.large's is 29
+  # (3 ENIs x 10 IPs), still short of the stack's needs. The management
   # stack (Crossplane + 6 providers + functions + ESO + ArgoCD +
   # ingress-nginx + external-dns) exhausts the pod-IP slots — both nodes were
   # observed at 3/3 ENIs and 18/18 IPs, so new pods (e.g. the ingress-nginx
@@ -72,8 +73,8 @@ module "eks" {
 
       # Realize prefix delegation's higher pod density at the kubelet layer.
       # The vpc-cni addon above raises the IP ceiling (/28 prefixes); this
-      # raises the kubelet's advertised pod capacity from t3.medium's default
-      # ~17 to 110 (the EKS soft cap for small instances). BOTH are required:
+      # raises the kubelet's advertised pod capacity from the instance default
+      # (t3.medium ~17, m5.large 29) to 110 (the EKS soft cap for small instances). BOTH are required:
       # without this, kubelet still advertises ~17 even though IPs are
       # available. nodeadm merges this NodeConfig with the EKS-injected one;
       # later docs override, so maxPods here is authoritative.

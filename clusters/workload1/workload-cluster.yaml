@@ -51,8 +51,8 @@ spec:
     # `platform.`).
     subdomain: workload1
   nodeGroup:
-    # t3.medium x 2 — within the 9-instance EC2 quota (mgmt 2 + platform 2 +
-    # workload1 2 = 6, 3 headroom). Bump after the quota is raised.
+    # t3.medium x 2 — within the 9-instance EC2 quota (hub 2 + platform 2 +
+    # relay 1 + ops box 1 + workload1 2 = 8, 1 headroom).
     instanceTypes: ["t3.medium"]
     desiredSize: 2
     minSize: 1

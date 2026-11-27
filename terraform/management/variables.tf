@@ -35,32 +35,33 @@ variable "cluster_version" {
 variable "node_instance_type" {
   description = <<-EOT
     EC2 instance type for management cluster nodes.
-    Account constraint: t3.medium or smaller (see ai/testing-guidelines.md §1).
-    t3.medium (2 vCPU / 4 GiB) is the recommended minimum for running
-    ArgoCD + Crossplane + ESO on the same node group.
+    Account constraint: m5.large or smaller (see ai/testing-guidelines.md §1).
+    m5.large (2 vCPU / 8 GiB) carries ArgoCD + Crossplane + ESO on two
+    nodes; three t3.medium (4 GiB) nodes were needed before the account
+    allowed m5.large.
   EOT
   type        = string
-  default     = "t3.medium"
+  default     = "m5.large"
 }
 
 variable "node_desired_size" {
-  description = "Desired node count. 3 nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
+  description = "Desired node count. 2 m5.large nodes for the management stack (Crossplane + 6 providers + functions + ESO + ArgoCD + ingress-nginx + external-dns). Stay within the 9-instance EC2 quota."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "node_min_size" {
-  # 3, not 1: the terraform-aws-modules/eks module IGNORES desired_size changes
-  # (autoscaler-friendly), so bumping desired alone is a no-op in the plan. Pin
-  # min_size to force the ASG to the intended 3-node count.
+  # Equal to desired, not 1: the terraform-aws-modules/eks module IGNORES
+  # desired_size changes (autoscaler-friendly), so changing desired alone is a
+  # no-op in the plan. Pin min_size to force the ASG to the intended 2 nodes.
   type    = number
-  default = 3
+  default = 2
 }
 
 variable "node_max_size" {
   description = "Max nodes. The account caps total EC2 instances across all services — stay conservative."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "availability_zones" {

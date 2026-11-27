@@ -193,9 +193,9 @@ were rotated to a different account, the bucket changes too. Run
 `terraform init -reconfigure` or delete the `.terraform` directory.
 
 ### Apply fails: "InvalidInstanceType"
-An instance type outside `t2/t3/t3a/t4g micro/small/medium` was used. See
-`ai/testing-guidelines.md` for allowed types. The management cluster must use
-`t3.medium` or smaller.
+An instance type outside `t2/t3/t3a/t4g micro/small/medium` or `m5.large` was
+used. See `ai/testing-guidelines.md` for allowed types. The management cluster
+uses `m5.large`.
 
 ### Apply fails: "VcpuLimitExceeded" or instance count errors
 Too many instances. The account allows **maximum 9 concurrent instances**
@@ -224,7 +224,7 @@ Too many instances. The account allows **maximum 9 concurrent instances**
 Before triggering `apply-and-verify`:
 
 - [ ] GitHub secrets present and current (run `scripts/aws-creds-check.sh`)
-- [ ] `node_desired_size` ≤ 2, `node_instance_type` = `t3.medium` or smaller
+- [ ] `node_desired_size` ≤ 2, `node_instance_type` = `m5.large` or a smaller allowed type
 - [ ] Only 2 AZs configured (to stay within NAT gateway and instance limits)
 
 After the run:

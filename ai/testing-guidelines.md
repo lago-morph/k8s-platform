@@ -19,12 +19,12 @@ Adjust the pre-flight checklist if your account differs.
 
 | Constraint | Value |
 |---|---|
-| Allowed families/sizes | t2 / t3 / t3a / t4g — only `micro`, `small`, `medium` |
+| Allowed families/sizes | t2 / t3 / t3a / t4g — only `micro`, `small`, `medium`; plus `m5.large` (allowed since 2026-11) |
 | Max EBS volume | 100 GB per volume |
 | Max concurrent instances | **9** total across all services |
 
-Management cluster default: `t3.medium × 2` (`desired=2, min=1, max=3`). If
-quota bites, drop `node_desired_size` to 1.
+Management cluster default: `m5.large × 2` (`desired=min=max=2`). The platform
+services spoke is also `m5.large × 2`. If quota bites, drop the node counts.
 
 ### Networking / IAM / Other
 
@@ -42,9 +42,9 @@ quota bites, drop `node_desired_size` to 1.
 ### Pre-flight checklist before any apply
 
 - [ ] `node_desired_size` ≤ 2 in `terraform/management/`
-- [ ] `node_instance_type` = `t3.medium` or smaller
+- [ ] `node_instance_type` = `m5.large` or a smaller allowed type
 - [ ] Exactly 2 entries in `availability_zones`
-- [ ] No t3.large+, no m/c/r family instances anywhere in the diff
+- [ ] No t3.large+, and no m/c/r family instances except `m5.large`, anywhere in the diff
 
 ---
 

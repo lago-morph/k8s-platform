@@ -46,10 +46,9 @@ spec:
     # cluster is scoped to this subdomain.
     subdomain: platform
   nodeGroup:
-    # t3.medium x 2 sized for the 9-instance EC2 quota in this account
-    # (management cluster uses 2 already; this leaves 5 headroom for
-    # workload clusters). Bump after the quota is raised.
-    instanceTypes: ["t3.medium"]
+    # m5.large x 2 within the 9-instance EC2 quota in this account (hub 2 +
+    # spoke 2 + relay 1 + ops box 1 = 6, leaving 3 for workload clusters).
+    instanceTypes: ["m5.large"]
     desiredSize: 2
     minSize: 1
     maxSize: 3

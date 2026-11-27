@@ -10,11 +10,12 @@ tf_state_bucket = "my-tfstate-bucket" # auto-derived in CI from account ID
 cluster_name    = "k8-platform-mgmt"
 cluster_version = "1.29"
 
-# Pluralsight sandbox: t3.medium is the recommended type (see ai/testing-guidelines.md).
-node_instance_type = "t3.medium"
+# Pluralsight sandbox: m5.large is the recommended type (see ai/testing-guidelines.md).
+# Keep these equal to terraform/management/variables.tf defaults.
+node_instance_type = "m5.large"
 node_desired_size  = 2
-node_min_size      = 1
-node_max_size      = 3
+node_min_size      = 2
+node_max_size      = 2
 
 availability_zones = ["us-east-1a", "us-east-1b"]
 
