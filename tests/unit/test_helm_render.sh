@@ -47,30 +47,57 @@ INGRESS_NGINX_VERSION="$(awk '/variable "ingress_nginx_version"/,/^}/' \
 EXTERNAL_DNS_VERSION="1.15.0"
 
 echo "── helm-render: argocd ────────────────────────────────────────────"
+# The argocd --set list is READ from helm.tf's helm_release.argocd set{}
+# blocks (no hand-kept mirror to drift), so this render is what terraform
+# installs. Terraform interpolations become stubs (the IRSA role ARN,
+# ${var.domain}); HCL's "\\." escapes become helm's "\.".
+ARGOCD_SETS=()
+while IFS=$'\t' read -r n v; do
+  [ -n "$n" ] || continue
+  n="${n#\"}"; n="${n%\"}"; n="${n//\\\\/\\}"
+  case "$v" in
+    module.irsa_argocd.iam_role_arn) v="$STUB_ARGOCD_IRSA" ;;
+    *) v="${v#\"}"; v="${v%\"}"; v="${v//\$\{var.domain\}/$STUB_DOMAIN}" ;;
+  esac
+  ARGOCD_SETS+=("$n=$v")
+done < <(awk '/^resource "helm_release" "argocd"/,/^}/' "$HERE/../../terraform/management/helm.tf" | awk '
+  /^[[:space:]]*set[[:space:]]*\{/ {inset=1; n=""; v=""; next}
+  inset && /^[[:space:]]*name[[:space:]]*=/  {sub(/^[^=]*=[[:space:]]*/, ""); n=$0}
+  inset && /^[[:space:]]*value[[:space:]]*=/ {sub(/^[^=]*=[[:space:]]*/, ""); v=$0}
+  inset && /^[[:space:]]*\}/ {inset=0; print n "\t" v}')
+if [ "${#ARGOCD_SETS[@]}" -ge 5 ]; then
+  pass "argocd: read ${#ARGOCD_SETS[@]} set{} blocks from helm.tf helm_release.argocd"
+else
+  fail "argocd: could not read the set{} blocks from helm.tf helm_release.argocd" "${ARGOCD_SETS[*]:-none}"
+fi
 OUT="$TMP/argocd.yaml"
 if helm_render \
   "https://argoproj.github.io/argo-helm" \
   "argo-cd" \
   "$ARGOCD_VERSION" \
   "$OUT" \
-  "server.service.type=ClusterIP" \
-  "server.extraArgs[0]=--insecure" \
-  "server.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$STUB_ARGOCD_IRSA" \
-  "server.ingress.enabled=true" \
-  "server.ingress.ingressClassName=nginx" \
-  "server.ingress.annotations.external-dns\.alpha\.kubernetes\.io/hostname=argocd.management.$STUB_DOMAIN" \
-  "server.ingress.hostname=argocd.management.$STUB_DOMAIN"; then
+  "${ARGOCD_SETS[@]}"; then
   # The argocd-server ServiceAccount must carry the IRSA annotation.
   assert_yq_eq "$OUT" \
     'select(.kind=="ServiceAccount" and .metadata.name=="argocd-server") | .metadata.annotations["eks.amazonaws.com/role-arn"]' \
     "$STUB_ARGOCD_IRSA" \
     "argocd: argocd-server SA has IRSA annotation"
 
-  # No annotation should land on the *application-controller* SA — different IRSA scope.
+  # The application-controller SA carries the same IRSA role (auto-012: it
+  # runs argocd-k8s-auth against the spoke clusters).
   assert_yq_eq "$OUT" \
     'select(.kind=="ServiceAccount" and .metadata.name=="argocd-application-controller") | .metadata.annotations["eks.amazonaws.com/role-arn"] // ""' \
-    "" \
-    "argocd: application-controller SA does NOT get the server IRSA arn"
+    "$STUB_ARGOCD_IRSA" \
+    "argocd: application-controller SA has the IRSA annotation"
+
+  # Argo CD 3.0 stopped persisting per-resource health in the Application
+  # CR (.status.resources[].health). scripts/argocd-apps.sh and the
+  # phase-2-diagnose workflow read it with kubectl, so helm.tf turns
+  # persistence back on (kp-2al.56).
+  assert_yq_eq "$OUT" \
+    'select(.kind=="ConfigMap" and .metadata.name=="argocd-cmd-params-cm") | .data["controller.resource.health.persist"]' \
+    "true" \
+    "argocd: argocd-cmd-params-cm controller.resource.health.persist == true"
 
   # Ingress is enabled and host points at our subdomain. Select by
   # app.kubernetes.io/name=argocd-server because the chart prefixes Ingress
