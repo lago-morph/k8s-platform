@@ -44,7 +44,11 @@ spec:
       sources:
         - repoURL: https://kubernetes.github.io/ingress-nginx
           chart: ingress-nginx
-          targetRevision: 4.10.0
+          # Same chart as the hub (terraform/management/variables.tf
+          # ingress_nginx_version) — held equal by
+          # tests/unit/test_version_pin_consistency.sh. 4.15.1 is the last
+          # upstream release (project retired; replacement is v2.0).
+          targetRevision: 4.15.1
           helm:
             valueFiles:
               - $values/platform-services/ingress/values.yaml
