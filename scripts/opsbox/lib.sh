@@ -18,6 +18,16 @@ set -uo pipefail
 : "${AWS_PAGER:=}"
 export AWS_PAGER
 
+# HOME is unset when a script is started through `aws ssm send-command`
+# (AWS-RunShellScript runs as root with no login environment). The run log,
+# `aws eks update-kubeconfig` and kubectl all need it, and the drivers run
+# under `set -u` (kp-2al.55). Resolve it from the passwd entry, else /tmp.
+if [ -z "${HOME:-}" ]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
+  [ -n "$HOME" ] || HOME=/tmp
+  export HOME
+fi
+
 HUB_CLUSTER="${HUB_CLUSTER:-k8-platform-mgmt}"
 SPOKE_CLUSTER="${SPOKE_CLUSTER:-k8-platform-services}"
 OPSBOX_ROLE_NAME="${OPSBOX_ROLE_NAME:-k8-platform-opsbox}"
