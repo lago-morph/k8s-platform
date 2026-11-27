@@ -10,7 +10,9 @@ set -euxo pipefail
 exec > >(tee -a /var/log/opsbox-bootstrap.log) 2>&1
 echo "=== opsbox bootstrap starting $(date -u +%FT%TZ) ==="
 
-dnf install -y git jq tar gzip unzip which findutils procps-ng bind-utils
+# httpd-tools: htpasswd, which scripts/k8p-argocd-password.sh uses to bcrypt the
+# Argo CD admin password (kp-2al.44).
+dnf install -y git jq tar gzip unzip which findutils procps-ng bind-utils httpd-tools
 
 CHECKOUT=/opt/k8-platform
 if [ ! -d "$CHECKOUT/.git" ]; then
