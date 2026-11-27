@@ -477,6 +477,32 @@ else
 fi
 assert_contains "log: dry run says it did not copy" "not copied" "$(cat "$MOCK_DIR/out9")"
 
+# kp-2al.55: under `aws ssm send-command` the driver runs as root with no
+# HOME. It must not die on `set -u`; it resolves HOME from the passwd entry.
+# A getent shim points that entry at a temp dir so the test stays hermetic.
+fresh_world
+FAKE_HOME="$MOCK_DIR/fakehome"; NOHOME_BIN="$MOCK_DIR/nohome-bin"
+mkdir -p "$FAKE_HOME" "$NOHOME_BIN"
+# Answer passwd lookups only; hand everything else (e.g. `getent hosts`, which
+# the endpoint check uses) to the suite's own mock or the real getent.
+cat > "$NOHOME_BIN/getent" <<SHIM
+#!/usr/bin/env bash
+if [ "\$1" = passwd ]; then echo "root:x:0:0:root:$FAKE_HOME:/bin/bash"; exit 0; fi
+PATH="$MOCK_DIR:\$PATH" exec getent "\$@"
+SHIM
+chmod +x "$NOHOME_BIN/getent"
+env -u HOME -u K8P_LOG_DIR PATH="$NOHOME_BIN:$MOCK_DIR:$PATH" NO_COLOR=1 \
+  MOCK_FACTS="iss|ep|ca|arn" MOCK_BOOTSTRAP="$DRIVER_SHA" MOCK_APPS="$GOOD" \
+  MOCK_CALLS="$MOCK_DIR/calls" \
+  timeout 60 bash scripts/opsbox/k8p-bringup.sh --dry-run >"$MOCK_DIR/out_nohome" 2>&1; rc=$?
+if grep -q "unbound variable" "$MOCK_DIR/out_nohome"; then
+  _fail "no HOME: driver does not die on set -u" "$(grep 'unbound' "$MOCK_DIR/out_nohome")"
+else
+  _pass "no HOME: driver does not die on set -u"
+fi
+assert_eq "no HOME: dry run exits 0" 0 "$rc"
+assert_contains "no HOME: logs under the resolved home" "$FAKE_HOME/k8p-bringup" "$(cat "$MOCK_DIR/out_nohome")"
+
 # An unwritable log directory is reported and the bring-up still runs.
 fresh_world
 K8P_LOG_DIR=/proc/k8p-cannot-exist MOCK_CALLS="$MOCK_DIR/calls" run_driver "$MOCK_DIR/out10"; rc=$?
