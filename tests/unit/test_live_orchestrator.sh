@@ -221,4 +221,122 @@ assert_contains "reaper still ran before the failed acquire" "reaper_run" "$(cat
 assert_eq "no release after a failed acquire" "true" \
   "$(grep -q release "$TMP/p3.log" && echo false || echo true)"
 
+# ════════════════════════════════════════════════════════════════════════
+# kp-2al.37 — CI must be a full verdict: unregistered skips go RED, checks
+# that need cluster access run under the cluster identity, tunnels are shared
+# and checks run in parallel without changing the tally.
+# ════════════════════════════════════════════════════════════════════════
+
+# mkcheck_body <tier> <name> <header-line-or-empty> <body...> — stub with a
+# header line (e.g. '# live-identity: cluster') and an arbitrary body.
+mkcheck_body() {
+  local tier="$1" name="$2" header="$3"; shift 3
+  mkdir -p "$TMP/$tier"
+  {
+    echo '#!/usr/bin/env bash'
+    [ -n "$header" ] && echo "$header"
+    printf '%s\n' "$@"
+  } > "$TMP/$tier/$name.sh"
+  chmod +x "$TMP/$tier/$name.sh"
+}
+write_register() { printf '%s\n' "$@" > "$TMP/REGISTER.yaml"; }
+empty_register() { write_register 'profile_choice: {}' 'disable_all: {}' 'skips: []'; }
+
+echo ""
+echo "── live: LIVE_STRICT_SKIPS — an unregistered skip is RED ─────"
+reset_checks; empty_register
+mkcheck after a 0 "x/Y"
+mkcheck after b 2
+assert_eq "strict off (default): pass + skip ⇒ exit 0" 0 \
+  "$(run_suite_rc LIVE_EXPECT_FULL=x/Y )"
+assert_eq "strict on: pass + UNREGISTERED skip ⇒ exit 1" 1 \
+  "$(run_suite_rc LIVE_STRICT_SKIPS=1 LIVE_EXPECT_FULL=x/Y )"
+out="$(env LIVE_STRICT_SKIPS=1 LIVE_EXPECT_FULL=x/Y LIVE_CHECKS_ROOT="$TMP" \
+        LIVE_SKIP_REGISTER="$TMP/REGISTER.yaml" bash "$RUN" 2>&1)"
+assert_contains "strict: the failure names the unregistered skip" "unregistered skip" "$out"
+assert_contains "strict: names the check as tier/name" "after/b.sh" "$out"
+
+write_register 'profile_choice: {}' 'disable_all: {}' 'skips:' \
+  '  - check: "after/b.sh"' '    reason: "unit"' '    owner: "test"' '    expires: "2999-01-01"'
+assert_eq "strict on: REGISTERED skip (valid) ⇒ exit 0" 0 \
+  "$(run_suite_rc LIVE_STRICT_SKIPS=1 LIVE_EXPECT_FULL=x/Y )"
+
+write_register 'profile_choice: {}' 'disable_all: {}' 'skips:' \
+  '  - check: "after/b.sh"' '    reason: "unit"' '    owner: "test"' '    expires: "2000-01-01"'
+assert_eq "strict on: EXPIRED registration ⇒ exit 1" 1 \
+  "$(run_suite_rc LIVE_STRICT_SKIPS=1 LIVE_EXPECT_FULL=x/Y )"
+
+write_register 'profile_choice: {}' 'disable_all: {}' 'skips:' \
+  '  - check: "after/b.sh"' '    reason: ""' '    owner: "test"' '    expires: "2999-01-01"'
+assert_eq "strict on: registration without a reason ⇒ exit 1" 1 \
+  "$(run_suite_rc LIVE_STRICT_SKIPS=1 LIVE_EXPECT_FULL=x/Y )"
+empty_register
+
+echo ""
+echo "── live: per-check identity (live-identity: cluster) ──────────"
+reset_checks
+mkcheck_body after scoped "" \
+  "echo \"\${AWS_PROFILE:-none}|\${AWS_ACCESS_KEY_ID:-unset}\" > '$TMP/id-scoped'" 'exit 0'
+mkcheck_body after clusterwide "# live-identity: cluster" \
+  "echo \"\${AWS_PROFILE:-none}|\${AWS_ACCESS_KEY_ID:-unset}|\${AWS_SESSION_TOKEN:-unset}\" > '$TMP/id-cluster'" 'exit 0'
+rm -f "$TMP"/id-*
+rc="$(run_suite_rc AWS_ACCESS_KEY_ID=SCOPEDKEY AWS_SESSION_TOKEN=SCOPEDTOK \
+        LIVE_CLUSTER_AWS_PROFILE=clusterprof LIVE_EXPECT_FULL= )"
+assert_eq "identity: suite passes" 0 "$rc"
+assert_eq "scoped check keeps the caller's (scoped) creds" "none|SCOPEDKEY" "$(cat "$TMP/id-scoped" 2>/dev/null)"
+assert_eq "cluster check runs under the cluster profile, scoped env creds removed" \
+  "clusterprof|unset|unset" "$(cat "$TMP/id-cluster" 2>/dev/null)"
+rm -f "$TMP"/id-*
+rc="$(run_suite_rc AWS_ACCESS_KEY_ID=SCOPEDKEY LIVE_EXPECT_FULL= )"
+assert_eq "no LIVE_CLUSTER_AWS_PROFILE ⇒ cluster check inherits the caller's creds" \
+  "none|SCOPEDKEY|unset" "$(cat "$TMP/id-cluster" 2>/dev/null)"
+
+echo ""
+echo "── live: LIVE_PARALLEL — same tally, less wall time ───────────"
+reset_checks
+for n in 1 2 3 4; do mkcheck_body after "slow$n" "" 'sleep 2' "echo 'COVERS x/Y$n'" 'exit 0'; done
+mkcheck_body after zfail "" 'sleep 2' 'exit 1'
+mkcheck_body after zskip "" 'exit 2'
+start=$(date +%s)
+out="$(env LIVE_PARALLEL=6 LIVE_EXPECT_FULL='x/Y1 x/Y2 x/Y3 x/Y4' LIVE_CHECKS_ROOT="$TMP" \
+        LIVE_SKIP_REGISTER="$TMP/REGISTER.yaml" bash "$RUN" 2>&1)"; rc=$?
+elapsed=$(( $(date +%s) - start ))
+assert_eq "parallel: a failing check still makes the suite RED" 1 "$rc"
+assert_contains "parallel: tally identical to serial" "pass=4 skip=1 fail=1 expect-full-violations=0 checks=6" "$out"
+assert_eq "parallel: 5 × 2 s checks finish in < 6 s" "true" "$([ "$elapsed" -lt 6 ] && echo true || echo false)"
+# Output stays in deterministic (sorted) order, one block per check.
+order="$(printf '%s\n' "$out" | sed -n 's#^──── .*/\(after/[a-z0-9]*\.sh\).*#\1#p' | tr '\n' ' ')"
+assert_eq "parallel: per-check output blocks in sorted order" \
+  "after/slow1.sh after/slow2.sh after/slow3.sh after/slow4.sh after/zfail.sh after/zskip.sh " "$order"
+out_serial="$(env LIVE_EXPECT_FULL='x/Y1 x/Y2 x/Y3 x/Y4' LIVE_CHECKS_ROOT="$TMP" \
+        LIVE_SKIP_REGISTER="$TMP/REGISTER.yaml" bash "$RUN" 2>&1)"
+assert_contains "serial (default): same tally" "pass=4 skip=1 fail=1 expect-full-violations=0 checks=6" "$out_serial"
+
+echo ""
+echo "── live: shared tunnels opened once, under the cluster identity, stopped at exit"
+reset_checks; mkcheck after a 0 "x/Y"
+cat > "$TMP/fake-tunnel.sh" <<EOF
+#!/usr/bin/env bash
+# args: -c CLUSTER [--stop]
+c=""; stop=0
+while [ \$# -gt 0 ]; do case "\$1" in -c) c="\$2"; shift 2;; --stop) stop=1; shift;; *) shift;; esac; done
+if [ "\$stop" = 1 ]; then echo "stop \$c" >> "$TMP/tunnel.log"; exit 0; fi
+echo "open \$c profile=\${AWS_PROFILE:-none} key=\${AWS_ACCESS_KEY_ID:-unset}" >> "$TMP/tunnel.log"
+echo "export KUBECONFIG=/dev/null"
+EOF
+chmod +x "$TMP/fake-tunnel.sh"; rm -f "$TMP/tunnel.log"
+rc="$(run_suite_rc AWS_ACCESS_KEY_ID=SCOPEDKEY LIVE_CLUSTER_AWS_PROFILE=clusterprof \
+        LIVE_SHARED_TUNNELS='hubc spokec' LIVE_TUNNEL_HELPER="$TMP/fake-tunnel.sh" LIVE_EXPECT_FULL=x/Y )"
+assert_eq "tunnels: suite passes" 0 "$rc"
+assert_eq "tunnels: opened for each cluster under the cluster profile, then stopped" \
+  "open hubc profile=clusterprof key=unset|open spokec profile=clusterprof key=unset|stop hubc|stop spokec" \
+  "$(paste -sd'|' "$TMP/tunnel.log" 2>/dev/null)"
+cat > "$TMP/fail-tunnel.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "FATAL: SSM tunnel did not open" >&2; exit 1
+EOF
+chmod +x "$TMP/fail-tunnel.sh"
+assert_eq "tunnels: a tunnel that will not open is RED, not a pile of skips" 1 \
+  "$(run_suite_rc LIVE_SHARED_TUNNELS='hubc' LIVE_TUNNEL_HELPER="$TMP/fail-tunnel.sh" LIVE_EXPECT_FULL=x/Y )"
+
 assert_summary

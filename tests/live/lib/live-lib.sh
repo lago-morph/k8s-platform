@@ -43,6 +43,42 @@ skip() { echo "  SKIP: $*"; exit "$LIVE_RC_SKIP"; }
 # actually verified by a PASSING check.
 covers() { echo "COVERS $1"; }
 
+# ---- relay error handling (kp-zab.6) ----------------------------------------
+# Checks drive kubectl through scripts/sandbox-kubeconfig.sh --exec. Its stderr
+# must be CAPTURED (never 2>/dev/null): it is the only place the real reason a
+# relay call failed appears. Usage inside a retry loop:
+#   RELAY_ERR="$(mktemp)"
+#   OUT="$("$HELPER" -c "$C" -r "$REGION" --exec kubectl ... 2>"$RELAY_ERR")"
+#   <parse OUT; break on success>
+#   relay_denied_skip "$RELAY_ERR"        # permission, not a flake: skip now
+#   ...after the loop, on failure:
+#   relay_err_tail "$RELAY_ERR"           # show WHY before skipping
+#
+# relay_denied_skip <errfile> — a caller without ssm:StartSession on the relay
+# can never succeed, so retrying is wasted time and "tunnel flake" is false.
+# Skip immediately with the real reason.
+relay_denied_skip() {
+  local f="$1"
+  [ -s "$f" ] || return 0
+  if grep -qE 'ssm:StartSession|not authorized to perform: ssm' "$f"; then
+    relay_err_tail "$f"
+    rm -f "$f"
+    skip "caller cannot ssm:StartSession on the relay (identity lacks relay access) — not a tunnel flake, not an absence"
+  fi
+}
+
+# relay_err_tail <errfile> — print the last lines the relay helper wrote to
+# stderr, or say explicitly that it wrote nothing.
+relay_err_tail() {
+  local f="$1"
+  if [ -s "$f" ]; then
+    echo "  relay helper stderr (last 5 lines):"
+    grep -v '^[[:space:]]*$' "$f" | tail -5 | sed 's/^/    | /'
+  else
+    echo "  relay helper stderr: (empty)"
+  fi
+}
+
 # ---- hub vs cluster-under-test (kp-ug3) -----------------------------------
 # LIVE_CLUSTER names the ONE cluster under test, which is routinely a SPOKE.
 # Some checks assert HUB-side fixtures (the `argocd` + `crossplane-system`

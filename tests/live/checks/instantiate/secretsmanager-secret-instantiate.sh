@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (instantiate tier) — CREATE a real Secrets Manager secret
 # through the Crossplane controller, prove it converged + the real ASM secret
 # exists, then ALWAYS delete it (FINAL-PLAN §P4; ADR-0006).

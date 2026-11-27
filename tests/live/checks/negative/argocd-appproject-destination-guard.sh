@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE negative check — ArgoCD AppProject destination guard fires.
 #
 # Guard under test:
@@ -90,11 +91,24 @@ HUB_SERVER="https://kubernetes.default.svc"
 # (default 10 × 2s = 20s) without changing real behavior.
 POLL_ITERS="${LIVE_NEG_POLL_ITERS:-10}"
 
+# Cleanup always reports what it did, then proves absence with a read — a
+# silent cleanup cannot be told apart from one that never ran (kp-2al.37).
 cleanup() {
-  KUBE delete application "$APP_DENY"  -n "$NS" --ignore-not-found >/dev/null 2>&1 \
-    || echo "WARN: cleanup of $APP_DENY may have failed" >&2
-  KUBE delete application "$APP_ALLOW" -n "$NS" --ignore-not-found >/dev/null 2>&1 \
-    || echo "WARN: cleanup of $APP_ALLOW may have failed" >&2
+  local app out
+  for app in "$APP_DENY" "$APP_ALLOW"; do
+    out="$(KUBE delete application "$app" -n "$NS" --ignore-not-found 2>&1)" \
+      || echo "WARN: cleanup: delete of application $app returned an error: $(printf '%s' "$out" | tail -1)" >&2
+    if printf '%s' "$out" | grep -q 'deleted'; then
+      echo "  cleanup: deleted application $app"
+    else
+      echo "  cleanup: application $app was not present (nothing to delete)"
+    fi
+    if KUBE get application "$app" -n "$NS" -o name 2>/dev/null | grep -q "application"; then
+      echo "WARN: cleanup: application $app STILL PRESENT after delete" >&2
+    else
+      echo "  cleanup: verified absent: application $app"
+    fi
+  done
 }
 trap cleanup EXIT
 

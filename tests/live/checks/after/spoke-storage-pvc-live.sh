@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (after tier) — the SPOKE has a default gp3
 # StorageClass backed by the EBS CSI driver, and its PersistentVolumeClaims
 # are actually BOUND.
@@ -98,23 +99,28 @@ else
 fi
 
 # 2. The driver the class names is actually registered on the cluster.
+RELAY_ERR="$(mktemp)"
 CSI_JSON="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec \
-             kubectl get csidrivers -o json 2>/dev/null)"
+             kubectl get csidrivers -o json 2>"$RELAY_ERR")"
 if printf '%s' "$CSI_JSON" | jq -e '.items[]? | select(.metadata.name=="ebs.csi.aws.com")' >/dev/null 2>&1; then
   log "csidriver ebs.csi.aws.com registered"
 else
   ng "csidriver ebs.csi.aws.com is NOT registered on $CLUSTER — the aws-ebs-csi-driver addon is missing or not converged"
+  relay_err_tail "$RELAY_ERR"
   fail_count=$((fail_count + 1))
 fi
 
 # 3. THE oracle: every PVC on the cluster is Bound, and there is at least one
 #    (zero PVCs would make this vacuously green — the disease this suite kills).
 PVC_JSON="$("$HELPER" -c "$CLUSTER" -r "$REGION" --exec \
-             kubectl get pvc -A -o json 2>/dev/null)"
+             kubectl get pvc -A -o json 2>"$RELAY_ERR")"
 if ! printf '%s' "$PVC_JSON" | jq -e '.items' >/dev/null 2>&1; then
   ng "could not read PVCs on $CLUSTER"
+  relay_err_tail "$RELAY_ERR"
+  rm -f "$RELAY_ERR"
   exit 1
 fi
+rm -f "$RELAY_ERR"
 TOTAL="$(printf '%s' "$PVC_JSON" | jq '.items | length')"
 BOUND="$(printf '%s' "$PVC_JSON" | jq '[.items[] | select(.status.phase=="Bound")] | length')"
 if [ "${TOTAL:-0}" -lt 1 ]; then

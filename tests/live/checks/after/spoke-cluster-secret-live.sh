@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# live-identity: cluster   (needs relay ssm:StartSession + Kubernetes access; tests/live/run.sh LIVE_CLUSTER_AWS_PROFILE)
 # LIVE behavioral check (after tier) — the durable ArgoCD spoke registration
 # Secret exists on the HUB and carries the full ADR-0010 cluster-facts
 # contract (lane: non-aws, KIND kubernetes.m.crossplane.io/Object).
@@ -51,22 +52,26 @@ log "reading spoke registration Secrets on hub '$HUB' through the SSM relay"
 RELAY_ATTEMPTS="${LIVE_RELAY_ATTEMPTS:-4}"
 RELAY_INTERVAL="${LIVE_RELAY_INTERVAL:-15}"
 OUT=""; relay_ok=0
+RELAY_ERR="$(mktemp)"
 for attempt in $(seq 1 "$RELAY_ATTEMPTS"); do
   OUT="$("$HELPER" -c "$HUB" -r "$REGION" --exec \
           kubectl get secrets -n argocd \
             -l 'argocd.argoproj.io/secret-type=cluster,k8-platform.io/cluster-role=spoke' \
-            -o json 2>/dev/null)"
+            -o json 2>"$RELAY_ERR")"
   if [ -n "$OUT" ] && printf '%s' "$OUT" | jq -e '.items' >/dev/null 2>&1; then
     relay_ok=1; break
   fi
+  relay_denied_skip "$RELAY_ERR"
   log "relay attempt $attempt/$RELAY_ATTEMPTS did not return a parseable list for $HUB; retry in ${RELAY_INTERVAL}s"
   [ "$attempt" -lt "$RELAY_ATTEMPTS" ] && sleep "$RELAY_INTERVAL"
 done
 
 if [ "$relay_ok" -ne 1 ]; then
   log "RELAY UNREACHABLE for $HUB after $RELAY_ATTEMPTS attempts."
-  log "  → This is a relay/SSM-tunnel failure, NOT evidence the Secret is absent."
-  skip "hub kube API not reachable after $RELAY_ATTEMPTS relay attempts (tunnel flake — not an absence)"
+  relay_err_tail "$RELAY_ERR"
+  log "  → A relay/SSM-tunnel failure, NOT evidence the Secret is absent."
+  rm -f "$RELAY_ERR"
+  skip "hub kube API not reachable after $RELAY_ATTEMPTS relay attempts (see relay helper stderr above — not an absence)"
 fi
 
 TOTAL="$(printf '%s' "$OUT" | jq '.items | length')"
