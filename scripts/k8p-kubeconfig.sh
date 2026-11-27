@@ -26,8 +26,8 @@
 #   hub   — the IAM principal that created it is cluster-admin; the ops box's
 #           role becomes admin once k8p-bringup.sh / k8p-status.sh has run.
 #   spoke — cloud_user has a read-only AmazonEKSAdminViewPolicy access entry
-#           (the Composition's sandbox-access-entry). The ops box role has
-#           none, so from the ops box a spoke reports UNAUTHORIZED.
+#           (the Composition's sandbox-access-entry). The ops box role gets
+#           the same read-only policy from k8p-bringup.sh after gate 1.
 # Cluster API endpoints are public: no VPN or relay is needed.
 #
 # Read-only against AWS and the clusters. It writes only kubeconfig entries
@@ -170,7 +170,7 @@ for i in "${!CLUSTERS[@]}"; do
   head_ "$c ($role)"
   case "$role" in
     hub)   info "$c: expected access: the hub's creator is cluster-admin; the ops box role is admin after k8p-bringup.sh" ;;
-    spoke) info "$c: expected access: cloud_user is read-only (AmazonEKSAdminViewPolicy); the ops box role has no entry" ;;
+    spoke) info "$c: expected access: cloud_user is read-only (AmazonEKSAdminViewPolicy); the ops box role is read-only after k8p-bringup.sh" ;;
   esac
 
   if [ "$status" != "ACTIVE" ]; then

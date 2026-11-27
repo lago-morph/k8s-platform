@@ -436,9 +436,8 @@ For a stuck gate 1 the useful one is
 `scripts/crossplane-trace.sh xplatformcluster/platform -n platform --watch`;
 for gate 2, `xspokeaccess/platform`. The driver prints these itself when
 it stops there. The box grants itself cluster-admin on the hub on first
-use (an EKS access entry for its own role); the spoke's API is reachable
-from the box by network but the box holds no access entry there, so
-spoke-side reads are not part of this page.
+use (an EKS access entry for its own role), and read-only access
+(`AmazonEKSAdminViewPolicy`) on the spoke once gate 1 has created it.
 
 ### Known slow spots, with their budgets
 
@@ -508,10 +507,11 @@ entry (`AmazonEKSAdminViewPolicy`), so `can-i create namespaces: no` is
 correct. A cluster fails only if its API does not answer or its nodes
 cannot be read. Then the script exits non-zero and says `UNREACHABLE`
 (the network or the endpoint) or `UNAUTHORIZED` (the API answered but
-your identity has no access entry). The ops box's own role has no
-access entry on the spoke (see the diagnostics section above), so on
-the box the spoke reports `UNAUTHORIZED`. That is expected. Do not add
-an access entry by hand to make it pass. If no clusters exist yet, the
+your identity has no access entry). On the ops box, `k8p-bringup.sh`
+grants the box's own role the same read-only policy on the spoke right
+after gate 1, so from the box both clusters should pass. If the spoke
+still reports `UNAUTHORIZED` there, re-run `k8p-bringup.sh` (it is
+idempotent) rather than adding an access entry by hand. If no clusters exist yet, the
 script says `no platform clusters found in <account>/<region>`.
 
 *Unverified:* the script has been tested only against stubbed `aws`
