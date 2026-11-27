@@ -205,7 +205,9 @@ cmd_set() {
   resolve_server
   local old_id old new_id len
   old_id="$(asm_current_id)"
-  [ -n "$old_id" ] && [ "$old_id" != "None" ] || die "Cannot read ASM secret $SECRET_ID. Nothing changed."
+  if [ -z "$old_id" ] || [ "$old_id" = "None" ]; then
+    die "Cannot read ASM secret $SECRET_ID. Nothing changed."
+  fi
   old="$(asm_current_value)"
   [ -n "$old" ] || die "ASM secret $SECRET_ID has no AWSCURRENT value. Nothing changed."
   kc "$HUB_CLUSTER" -n argocd get secret argocd-secret -o name >/dev/null 2>&1 \
