@@ -112,10 +112,14 @@ assert_contains "console_url query string is the region variable" \
   '?region=${var.aws_region}' "$url_expr"
 
 echo "── 6. docs say 'variable', not 'secret' ──"
-# Any line, in the human docs, that names AWS_REGION alongside the word
-# "secret" — and not "variable" — is telling someone to set it as a secret. admin-access.md is owned
+# A line in the human docs that tells someone to set AWS_REGION as a secret:
+# "`AWS_REGION` secret", "secrets.AWS_REGION", "secret: AWS_REGION", or
+# AWS_REGION listed with the credential secrets. Merely mentioning a Secrets
+# Manager secret and the AWS_REGION shell variable on one line is not that
+# (scripts/k8p-cognito-user.sh does, legitimately). admin-access.md is owned
 # elsewhere; ai/archive and ai/brainstorming are historical records.
-doc_hits="$(grep -rniE 'AWS_REGION.*secret|secret.*AWS_REGION' \
+SECRET_SHAPES='AWS_REGION`?[[:space:]]*\(?(repository[[:space:]]+|actions[[:space:]]+|github[[:space:]]+)?secret|secrets?\.AWS_REGION|secrets?[[:space:]]*[:(`]*[[:space:]]*`?AWS_REGION|AWS_SECRET_ACCESS_KEY[^.]{0,60}AWS_REGION'
+doc_hits="$(grep -rniE "$SECRET_SHAPES" \
   docs/site README.md ai/environment.md scripts tests/integration/README.md 2>/dev/null \
   | grep -v 'docs/site/how-to/admin-access.md' \
   | grep -viE 'variable|vars\.AWS_REGION' || true)"
