@@ -114,10 +114,25 @@ REDIRECT_URI="http://localhost:8000"
 WORK="$(mktemp -d)"
 KC_JAR="$WORK/kc.jar"; COG_JAR="$WORK/cog.jar"
 FIXTURE_EMAIL=""
+# Cleanup always reports what it did, then proves absence with a read — a
+# silent cleanup cannot be told apart from one that never ran (kp-2al.37).
 cleanup() {
-  [ -n "$FIXTURE_EMAIL" ] && aws cognito-idp admin-delete-user \
-    --user-pool-id "$POOL_ID" --username "$FIXTURE_EMAIL" \
-    --region "$REGION" >/dev/null 2>&1
+  if [ -z "$FIXTURE_EMAIL" ]; then
+    echo "  cleanup: no fixture user was created (nothing to delete)"
+  else
+    if aws cognito-idp admin-delete-user --user-pool-id "$POOL_ID" \
+         --username "$FIXTURE_EMAIL" --region "$REGION" >/dev/null 2>"$WORK/cleanup.err"; then
+      echo "  cleanup: deleted fixture user $FIXTURE_EMAIL from pool $POOL_ID"
+    else
+      echo "WARN: cleanup: admin-delete-user for $FIXTURE_EMAIL failed: $(tail -1 "$WORK/cleanup.err" 2>/dev/null)" >&2
+    fi
+    if aws cognito-idp admin-get-user --user-pool-id "$POOL_ID" \
+         --username "$FIXTURE_EMAIL" --region "$REGION" >/dev/null 2>&1; then
+      echo "WARN: cleanup: fixture user $FIXTURE_EMAIL STILL PRESENT in pool $POOL_ID" >&2
+    else
+      echo "  cleanup: verified absent: fixture user $FIXTURE_EMAIL"
+    fi
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
