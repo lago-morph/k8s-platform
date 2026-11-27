@@ -24,8 +24,10 @@ design — discover it live, never hardcode it (enforced:
 
 ## 2. Credentials
 
-- **CI always has AWS creds** via three GHA repo secrets (`AWS_ACCESS_KEY_ID`,
-  `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`); everything else (state bucket, lock
+- **CI always has AWS creds** via two GHA repo secrets (`AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`) plus the `AWS_REGION` repository **variable**
+  (`vars.AWS_REGION`; a secret would mask the region as `***` in every log
+  line, console URLs included — kp-2al.36); everything else (state bucket, lock
   table, root domain, test creds) is auto-computed by
   `.github/workflows/terraform-test.yml`.
 - Do **not** assume the GHA secrets are stale: dispatch a cheap probe

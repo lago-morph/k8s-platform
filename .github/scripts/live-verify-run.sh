@@ -30,6 +30,9 @@ PROFILE="${LIVE_PROFILE:-full}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-${RUNNER_TEMP:-/tmp}/live-evidence}"
 CLUSTER="k8-platform-mgmt"   # mgmt cluster name (stable var default, not account-derived)
 
+# kp-2al.36: the region is the AWS_REGION repository variable; never guess one.
+bash "$HERE/.github/scripts/require-aws-region.sh"
+
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 
 # Cluster identity: the job's credentials as a named profile, written to a
@@ -40,7 +43,7 @@ export AWS_CONFIG_FILE="$LIVE_AWS_DIR/config"
 ( umask 077
   printf '[live-cluster]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
     "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" > "$AWS_SHARED_CREDENTIALS_FILE"
-  printf '[profile live-cluster]\nregion = %s\n' "${AWS_DEFAULT_REGION:-us-east-1}" > "$AWS_CONFIG_FILE" )
+  printf '[profile live-cluster]\nregion = %s\n' "${AWS_DEFAULT_REGION}" > "$AWS_CONFIG_FILE" )
 trap 'rm -rf "$LIVE_AWS_DIR"' EXIT
 export LIVE_CLUSTER_AWS_PROFILE="live-cluster"
 echo "cluster-access identity: $(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
@@ -120,7 +123,7 @@ export LIVE_PROFILE="$PROFILE"
 export LIVE_STRICT_SKIPS=1
 export LIVE_SHARED_TUNNELS="$CLUSTER k8-platform-services"
 export LIVE_PARALLEL="${LIVE_PARALLEL:-8}"
-export AWS_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+export AWS_REGION="${AWS_DEFAULT_REGION}"
 MODE="mutating"
 [ "$PROFILE" = "verify-only" ] && MODE="readonly"   # verify-only has nothing to mutate
 

@@ -32,11 +32,12 @@ arn=$(echo "$output"     | jq -r '.Arn // empty')
 [ -n "$account" ] && _pass "Account ID returned ($account)" || _fail "Account ID returned" "$output"
 [ -n "$arn" ]     && _pass "Caller ARN returned ($arn)"     || _fail "Caller ARN returned"  "$output"
 
-# Region must be set; the workflow exports AWS_DEFAULT_REGION from secrets.
+# Region must be set; the workflow exports AWS_DEFAULT_REGION from the
+# AWS_REGION repository VARIABLE (vars.AWS_REGION — not a secret, kp-2al.36).
 if [ -n "${AWS_DEFAULT_REGION:-${AWS_REGION:-}}" ]; then
-  _pass "AWS region is set"
+  _pass "AWS region is set (${AWS_DEFAULT_REGION:-${AWS_REGION:-}})"
 else
-  _fail "AWS region is set" "neither AWS_DEFAULT_REGION nor AWS_REGION exported"
+  _fail "AWS region is set" "neither AWS_DEFAULT_REGION nor AWS_REGION exported; in CI, set the AWS_REGION repository variable (Settings -> Secrets and variables -> Actions -> Variables)"
 fi
 
 assert_summary

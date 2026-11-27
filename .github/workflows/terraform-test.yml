@@ -40,8 +40,8 @@ env:
   TF_IN_AUTOMATION: "true"
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-  TF_VAR_aws_region: ${{ secrets.AWS_REGION }}
+  AWS_DEFAULT_REGION: ${{ vars.AWS_REGION }}
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
   # Domain, backend, and Cognito test credentials are all auto-generated in
   # the Bootstrap / Route53 discovery steps below and written to $GITHUB_ENV.
   # None of these require repository secrets.
@@ -83,6 +83,14 @@ jobs:
             "${{ inputs.action }}" \
             | tee -a "$GITHUB_OUTPUT"
 
+      # kp-2al.36: the region is the AWS_REGION repository VARIABLE (a secret
+      # would be masked as *** in every log line). Unset => fail here, loudly,
+      # before anything bootstraps state in a region nobody chose. The pure
+      # unit-test phase touches no AWS, so it does not need the variable.
+      - name: Require the AWS_REGION repository variable
+        if: steps.gates.outputs.test_unit != 'true'
+        run: .github/scripts/require-aws-region.sh
+
       # ──────────────────────────────────────────────────────────────────────
       # BOOTSTRAP — runs once per job; sets up the S3/DynamoDB backend and
       # discovers the pre-existing Route53 zone in the AWS account.
@@ -95,7 +103,7 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET="k8-platform-tfstate-${ACCOUNT_ID}"
           TABLE="k8-platform-tfstate-lock"
-          REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+          REGION="${AWS_DEFAULT_REGION}"
 
           # Create S3 bucket with versioning + encryption if absent.
           if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
@@ -324,7 +332,7 @@ jobs:
           exec > >(tee "${RUNNER_TEMP}/mgmt-e2e.txt") 2>&1
 
           CLUSTER=$(terraform output -raw cluster_name)
-          REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+          REGION="${AWS_DEFAULT_REGION}"
           KB=/tmp/e2e-kubeconfig
           aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" --kubeconfig "$KB"
           export KUBECONFIG="$KB"
@@ -489,7 +497,7 @@ jobs:
           # Surface AWS region/creds explicitly for the e2e harness so it
           # behaves identically whether invoked here or locally with the
           # same env set.
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -o pipefail
           tests/e2e/run.sh 2>&1 | tee "${RUNNER_TEMP}/test-e2e.txt"

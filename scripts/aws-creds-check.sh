@@ -23,7 +23,8 @@ echo "── region ────────────────────
 echo "  AWS_REGION=${AWS_REGION:-(unset)}"
 echo "  AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-(unset)}"
 [ -n "${AWS_REGION:-}${AWS_DEFAULT_REGION:-}" ] || \
-  echo "  WARN: no region set — tools may default to us-east-1 silently."
+  echo "  WARN: no region set — tools may default to us-east-1 silently." \
+       "In CI the region is the AWS_REGION repository variable (not a secret)."
 
 echo ""
 echo "── hosted zone discovery ──────────────────────────────────────────"

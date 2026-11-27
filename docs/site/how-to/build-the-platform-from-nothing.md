@@ -79,18 +79,34 @@ If the account has **more than one** public hosted zone, the build takes
 the first one the Route53 API returns. Leave exactly one in a fresh
 account so there is nothing to guess.
 
-### The three repository secrets
+### The two repository secrets
 
 Set these once per account, in the repository's
-**Settings → Secrets and variables → Actions → New repository secret**:
+**Settings → Secrets and variables → Actions → Secrets → New repository secret**:
 
 | Secret | Value |
 |---|---|
 | `AWS_ACCESS_KEY_ID` | Access key for an identity with administrative rights in the account |
 | `AWS_SECRET_ACCESS_KEY` | Its secret |
+
+### The one repository variable
+
+Set this once, in the repository's
+**Settings → Secrets and variables → Actions → Variables → New repository variable**:
+
+| Variable | Value |
+|---|---|
 | `AWS_REGION` | The region to build in, e.g. `us-east-1` |
 
-These are the **only** credentials anywhere in the procedure, and they
+The region is a **variable, not a secret**, on purpose. GitHub masks
+every secret's value as `***` wherever it appears in a run log, so a
+region stored as a secret turns the ops box's console URL into
+`https://***.console.aws.amazon.com/…?region=***`, which opens nothing.
+If the variable is missing, every workflow that talks to AWS stops at
+its first step, **Require the AWS_REGION repository variable**, with a
+message saying exactly that; none of them guesses a region.
+
+The two secrets are the **only** credentials anywhere in the procedure, and they
 live in GitHub, not on your machine. Nothing else is configured by
 hand: the workflows bootstrap their own Terraform state bucket and lock
 table from the account ID, discover the hosted zone and derive the
@@ -193,6 +209,8 @@ present.
 
 What a *real* problem looks like in this run:
 
+- **Require the AWS_REGION repository variable** fails: the variable is
+  not set, or is not a region name. Set it (step 0) and dispatch again.
 - **State backend** fails on `InvalidClientTokenId` or `AccessDenied`:
   the secrets are wrong, missing, or belong to a dead account. Fix the
   secrets; do not continue.

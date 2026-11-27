@@ -219,6 +219,10 @@ run_suite tests/unit/test_k8p_kubeconfig.sh
 # password must never reach output (except the one labelled --generate line)
 # or any process argv; every change is followed by a verification read.
 run_suite tests/unit/test_k8p_cognito_user.sh
+# kp-2al.36: the region is the AWS_REGION repository VARIABLE, never a secret —
+# GitHub masks referenced secrets as *** in logs, which broke the ops box's
+# console URL. Also pins the fail-fast guard for an unset variable.
+run_suite tests/unit/test_region_is_a_variable.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for
