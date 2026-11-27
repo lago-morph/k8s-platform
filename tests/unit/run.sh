@@ -239,6 +239,7 @@ run_suite tests/unit/test_eks_addons_pinned.sh
 # holds, never re-impose random_password; the change script must roll ASM back
 # when Argo CD cannot be moved, and must never print the password unasked.
 run_suite tests/unit/test_argocd_admin_password_source.sh
+run_suite tests/unit/test_argocd_password_script.sh
 
 # ── completeness guard (fail-closed) ─────────────────────────────────────
 # unit-tests.yml calls this runner the "catch-all … source of truth for

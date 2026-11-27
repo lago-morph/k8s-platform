@@ -24,6 +24,7 @@ All scripts:
 | `kyverno-policies.sh` | List ClusterPolicies and their mode. **Dormant** — the hub Kyverno install was removed (bead kp-2al.17); reinstatement is kp-caz.1 (v2.0). |
 | `kyverno-violations.sh` | PolicyReport violations across all namespaces. **Dormant** — see above. |
 | `argocd-apps.sh` | ArgoCD Application/AppProject status. |
+| `k8p-argocd-password.sh` | **Mutating.** The Argo CD admin password; AWS Secrets Manager (`k8-platform/management/argocd-admin`) is authoritative. `set [--generate]` writes a new ASM version, applies it to Argo CD and verifies the login, rolling ASM back if Argo CD cannot follow; `show [--reveal]`; `check`. |
 | `route53-records.sh` | List record sets in the discovered hosted zone. |
 | `k8p-kubeconfig.sh` | Installer step: discovers the platform's EKS clusters (tags, else `k8-platform-` prefix), writes a kubectl context named after each, and tests `/readyz`, `get nodes`, `can-i`, `whoami` with PASS/FAIL lines. Also on the ops box `PATH` via `scripts/opsbox/`. Writes kubeconfig entries only. |
 | `aws-creds-check.sh` | STS round-trip + Route53 zone discovery (no cluster needed). |
