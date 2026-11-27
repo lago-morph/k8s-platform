@@ -20,6 +20,25 @@
 #   LIVE_CHECKS_ROOT   (test seam) dir holding after/ instantiate/ negative/
 #                                  (default tests/live/checks)
 #   LIVE_SKIP_REGISTER (test seam) path to the register (default tests/live/SKIP_REGISTER.yaml)
+#   LIVE_STRICT_SKIPS  1 => a SKIP of a check with no valid register entry
+#                      (skips[].check == "<tier>/<name>.sh", reason/owner/expires,
+#                      not expired) is a FAIL. CI sets it: the producer is the
+#                      build's verdict and must not read green over checks it
+#                      never ran (kp-2al.37). Default 0 for local/partial runs.
+#   LIVE_CLUSTER_AWS_PROFILE  AWS profile for checks whose header declares
+#                      `# live-identity: cluster` (they need ssm:StartSession on
+#                      the relay and Kubernetes access). Those checks run with
+#                      AWS_PROFILE set and the caller's env creds removed; every
+#                      other check keeps the caller's (in CI: scoped) creds.
+#   LIVE_SHARED_TUNNELS  space-separated clusters to open ONE relay tunnel each
+#                      for, before any check, under the cluster identity; checks'
+#                      `--exec` calls then reuse them (and never tear them down),
+#                      which is what makes parallel checks safe. Stopped at exit.
+#                      A tunnel that will not open is a FAIL.
+#   LIVE_TUNNEL_HELPER (test seam) relay helper (default scripts/sandbox-kubeconfig.sh)
+#   LIVE_PARALLEL      max checks run at once (default 1 = serial). Output is
+#                      buffered per check and printed in sorted order; the tally
+#                      is identical to a serial run.
 #
 # Exit codes (orchestrator):
 #   0  clean pass
@@ -65,6 +84,37 @@ register_has_valid_disable_all() {
   [ -n "$reason" ] && [ -n "$owner" ] && [ -n "$expires" ] || return 1
   local today; today="$(date -u +%Y-%m-%d)"
   [ "$expires" \> "$today" ] || [ "$expires" = "$today" ]   # not expired
+}
+
+# register_allows_skip <tier/name.sh> — true iff skips[] holds an entry for
+# exactly that check with non-empty reason/owner/expires, not expired.
+register_allows_skip() {
+  local id="$1" reg="$REGISTER"
+  [ -f "$reg" ] || return 1
+  local n
+  n="$(ID="$id" TODAY="$(date -u +%Y-%m-%d)" yq -r '
+        [ .skips[]? | select(.check == strenv(ID))
+          | select((.reason // "") != "" and (.owner // "") != "" and (.expires // "") != "")
+          | select((.expires | tostring) >= strenv(TODAY)) ] | length' "$reg" 2>/dev/null)"
+  [ "${n:-0}" -gt 0 ]
+}
+
+# check_id <script> — "<tier>/<name>.sh", the register's key for a check.
+check_id() { echo "$(basename "$(dirname "$1")")/$(basename "$1")"; }
+
+# check_identity <script> — the identity a check declares in its header
+# (`# live-identity: cluster`), or "default".
+check_identity() {
+  local v
+  v="$(grep -m1 -E '^# live-identity:' "$1" 2>/dev/null | awk '{print $3}')"
+  echo "${v:-default}"
+}
+
+# as_cluster_identity <cmd...> — run a command under LIVE_CLUSTER_AWS_PROFILE
+# with the caller's env creds removed (env vars outrank AWS_PROFILE).
+as_cluster_identity() {
+  env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+    AWS_PROFILE="$LIVE_CLUSTER_AWS_PROFILE" "$@"
 }
 
 # derive_expect_full — the git-declared composed-MR kinds for the cluster under
@@ -139,24 +189,43 @@ COVERED_PASS=""          # group/kinds verified by a PASSING check
 declare -a FAILED=()           # hard failures
 declare -a EXPECT_FAILED=()    # children that exited LIVE_RC_EXPECT_FULL (code 3)
 
-run_check() {
-  local script="$1"
-  # P3: renew the account lease before each check so a long tier never lets the
-  # lease lapse mid-run. Losing it means another run stole it (ours expired) — we
-  # must stop mutating immediately (fail-closed).
+# P3: renew the account lease. Called before each serial check, and before and
+# after the parallel batch (the 30 min lease far outlasts one batch). Losing it
+# means another run stole it (ours expired) — stop mutating (fail-closed).
+renew_or_die() {
   if [ "${P3_ENGAGED:-0}" = "1" ]; then
     mutex_renew "$RUN_ID" || {
       echo "FAIL: lost the account-mutex lease mid-run (another run stole it); RED by design." >&2
       exit 1
     }
   fi
-  echo ""
-  echo "──── $script (RUN_ID=$RUN_ID, MODE=$MODE) ────"
-  local out rc
+}
+
+# exec_check <script> <outfile> — run one check under its declared identity;
+# its combined output goes to <outfile>, its exit code to <outfile>.rc.
+exec_check() {
+  local script="$1" outfile="$2" ident rc
+  ident="$(check_identity "$script")"
   set +e
-  out="$(LIVE_MODE="$MODE" bash "$script" 2>&1)"
+  if [ "$ident" = "cluster" ] && [ -n "${LIVE_CLUSTER_AWS_PROFILE:-}" ]; then
+    echo "  identity: cluster (AWS_PROFILE=$LIVE_CLUSTER_AWS_PROFILE)" > "$outfile"
+    as_cluster_identity LIVE_MODE="$MODE" bash "$script" >> "$outfile" 2>&1
+  else
+    echo "  identity: $ident (caller's credentials)" > "$outfile"
+    LIVE_MODE="$MODE" bash "$script" >> "$outfile" 2>&1
+  fi
   rc=$?
   set -e
+  echo "$rc" > "$outfile.rc"
+}
+
+# tally_check <script> <outfile> — print a finished check's output and count it.
+tally_check() {
+  local script="$1" outfile="$2" out rc
+  out="$(cat "$outfile")"
+  rc="$(cat "$outfile.rc")"
+  echo ""
+  echo "──── $script (RUN_ID=$RUN_ID, MODE=$MODE) ────"
   printf '%s\n' "$out"
   case "$rc" in
     "$LIVE_RC_PASS")
@@ -179,6 +248,11 @@ $k"
       if [ -n "$absent" ]; then
         FAIL=$((FAIL+1))
         FAILED+=("$script (hub-fixture absent on $(live_hub_cluster): $absent)")
+      elif [ "${LIVE_STRICT_SKIPS:-0}" = "1" ] && ! register_allows_skip "$(check_id "$script")"; then
+        # kp-2al.37: in strict mode a skip must be a recorded, attributable
+        # choice. Anything else is a check the verdict never ran.
+        FAIL=$((FAIL+1))
+        FAILED+=("$(check_id "$script") (unregistered skip — no valid entry in $REGISTER)")
       else
         SKIP=$((SKIP+1))
       fi
@@ -212,7 +286,6 @@ if [ "$LIVE_PROFILE" = "full" ] && [ "$MODE" = "mutating" ]; then
   # Then hold the account lease for the mutating tiers (fail-closed if we cannot).
   if mutex_acquire "$RUN_ID"; then
     P3_ENGAGED=1
-    trap 'mutex_release "$RUN_ID"' EXIT
     banner "P3 account lease HELD (run_id=$RUN_ID) — mutating tiers may proceed"
   else
     echo "FAIL: could not acquire the account-mutex lease (another run holds it); RED by design." >&2
@@ -221,15 +294,83 @@ if [ "$LIVE_PROFILE" = "full" ] && [ "$MODE" = "mutating" ]; then
   fi
 fi
 
-CHECK_COUNT=0
+# ---- exit cleanup: release the lease, stop shared tunnels, drop buffers ----
+TUNNEL_HELPER="${LIVE_TUNNEL_HELPER:-$REPO_ROOT/scripts/sandbox-kubeconfig.sh}"
+OPENED_TUNNELS=""
+OUT_DIR="$(mktemp -d)"
+on_exit() {
+  local c
+  for c in $OPENED_TUNNELS; do
+    if [ -n "${LIVE_CLUSTER_AWS_PROFILE:-}" ]; then
+      as_cluster_identity bash "$TUNNEL_HELPER" -c "$c" --stop >/dev/null 2>&1 || true
+    else
+      bash "$TUNNEL_HELPER" -c "$c" --stop >/dev/null 2>&1 || true
+    fi
+  done
+  [ "${P3_ENGAGED:-0}" = "1" ] && mutex_release "$RUN_ID"
+  rm -rf "$OUT_DIR"
+}
+trap on_exit EXIT
+
+# ---- shared relay tunnels (kp-2al.37) --------------------------------------
+# One tunnel per cluster, opened once under the cluster identity. Every check's
+# `sandbox-kubeconfig.sh --exec` then REUSES it and leaves it up, so no check can
+# tear down a tunnel another check is using — the collision that made checks
+# serial and produced the "tunnel flake" skips. A tunnel that will not open is a
+# FAIL: the checks behind it would otherwise skip, which is not a verdict.
+for c in ${LIVE_SHARED_TUNNELS:-}; do
+  banner "opening shared relay tunnel for $c"
+  if [ -n "${LIVE_CLUSTER_AWS_PROFILE:-}" ]; then
+    as_cluster_identity bash "$TUNNEL_HELPER" -c "$c" >/dev/null; trc=$?
+  else
+    bash "$TUNNEL_HELPER" -c "$c" >/dev/null; trc=$?
+  fi
+  if [ "$trc" -ne 0 ]; then
+    echo "FAIL: shared relay tunnel for $c did not open (helper exit $trc); RED by design." >&2
+    exit 1
+  fi
+  OPENED_TUNNELS="$OPENED_TUNNELS $c"
+  echo "  tunnel open for $c"
+done
+
+# ---- run the checks ----------------------------------------------------------
+SCRIPTS=()
 for tier in $ACTIVE_TIERS; do
   dir="$CHECKS_ROOT/$tier"
   [ -d "$dir" ] || continue
-  for script in $(find "$dir" -maxdepth 1 -name '*.sh' 2>/dev/null | sort); do
-    CHECK_COUNT=$((CHECK_COUNT+1))
-    run_check "$script"
-  done
+  while IFS= read -r script; do
+    [ -n "$script" ] && SCRIPTS+=("$script")
+  done < <(find "$dir" -maxdepth 1 -name '*.sh' 2>/dev/null | sort)
 done
+CHECK_COUNT=${#SCRIPTS[@]}
+PARALLEL="${LIVE_PARALLEL:-1}"
+case "$PARALLEL" in ''|*[!0-9]*|0) PARALLEL=1 ;; esac
+
+if [ "$PARALLEL" -le 1 ]; then
+  i=0
+  for script in "${SCRIPTS[@]}"; do
+    i=$((i+1))
+    renew_or_die
+    exec_check "$script" "$OUT_DIR/$i"
+    tally_check "$script" "$OUT_DIR/$i"
+  done
+else
+  banner "running $CHECK_COUNT checks, up to $PARALLEL at a time"
+  renew_or_die
+  i=0
+  for script in "${SCRIPTS[@]}"; do
+    i=$((i+1))
+    while [ "$(jobs -rp | wc -l)" -ge "$PARALLEL" ]; do wait -n 2>/dev/null || true; done
+    exec_check "$script" "$OUT_DIR/$i" &
+  done
+  wait
+  renew_or_die
+  i=0
+  for script in "${SCRIPTS[@]}"; do
+    i=$((i+1))
+    tally_check "$script" "$OUT_DIR/$i"
+  done
+fi
 
 # ---- expect-full promotion: every git-declared kind must be verified -------
 EXPECT_FULL="$(derive_expect_full)"
