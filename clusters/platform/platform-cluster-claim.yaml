@@ -39,7 +39,7 @@ metadata:
 spec:
   name: k8-platform-services
   region: us-east-1
-  version: "1.32"
+  version: "1.35"
   dns:
     # Platform services are published at <service>.platform.<domain>; the
     # wildcard ACM cert covers *.platform.<domain>. ExternalDNS on the

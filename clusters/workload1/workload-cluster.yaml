@@ -43,7 +43,7 @@ metadata:
 spec:
   name: k8-platform-workload1
   region: us-east-1
-  version: "1.32"
+  version: "1.35"
   dns:
     # Workload1 services are published at <service>.workload1.<domain>; the
     # wildcard ACM cert covers *.workload1.<domain>. ExternalDNS on the cluster

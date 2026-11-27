@@ -111,12 +111,12 @@ spec:
                   description: >-
                     Kubernetes control plane version. EKS supports the
                     current minus three minor versions; bumping requires
-                    a node group AMI bump too. Defaults to "1.32" — keep
+                    a node group AMI bump too. Defaults to "1.35" — keep
                     in sync with terraform/management/variables.tf
-                    (kubernetes_version) so management and platform
+                    (cluster_version) so management and platform
                     clusters share an upgrade cadence.
                   pattern: "^[0-9]+\\.[0-9]+$"
-                  default: "1.32"
+                  default: "1.35"
                 dns:
                   type: object
                   description: >-
