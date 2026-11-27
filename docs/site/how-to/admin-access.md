@@ -14,10 +14,11 @@ gaps included.
 !!! warning "Mostly verified mechanisms; these instructions not executed by a person"
     Most mechanisms below have run on a clean build — as a workflow
     step, or from an agent session inside the sandbox. Three scripts
-    have not: `scripts/k8p-kubeconfig.sh`, `scripts/k8p-cognito-user.sh`
-    and `scripts/k8p-argocd-password.sh`, and neither has the Argo CD
-    password's home in AWS Secrets Manager. Each is marked
-    **unverified** where it appears. **Nobody has worked through this
+    — `scripts/k8p-kubeconfig.sh`, `scripts/k8p-cognito-user.sh` and
+    `scripts/k8p-argocd-password.sh` — and the Argo CD password's home
+    in AWS Secrets Manager were exercised on the 2026-11-27 test build (bead kp-2al.54), run from the
+    ops box by an agent; they are `pending clean-build verification`
+    until the step 3 final build, and marked so where they appear. **Nobody has worked through this
     page as written.** Where a command has an attested form somewhere
     in this repository, this page names where; where it does not, it
     says so instead of guessing.
@@ -92,9 +93,11 @@ only kubeconfig entries and never prints tokens. Its output, including
 why the `can-i` answers differ by cluster, is described in
 [Connect kubectl to the clusters](build-the-platform-from-nothing.md#connect-kubectl-to-the-clusters).
 
-*Unverified:* the script has run only against stubbed `aws` and
-`kubectl` (`tests/unit/test_k8p_kubeconfig.sh`), not against a live
-build.
+*Pending clean-build verification:* on the 2026-11-27 test build (bead kp-2al.54) it ran from the ops
+box and reported both clusters reachable (2/2 nodes Ready each; admin on
+the hub, read-only on the spoke). It is also unit-tested against stubs
+(`tests/unit/test_k8p_kubeconfig.sh`). Nobody has run it from a
+workstation yet.
 
 Underneath, each context is the ordinary AWS CLI command, which you can
 also run by hand for one cluster, without the checks:
@@ -236,12 +239,14 @@ secret, and admin on the hub; the ops box has all of these.
 - **Attested:** the bcrypt-and-patch mechanism, which has applied the
   Argo CD password on every clean build, and the hub
   `aws eks update-kubeconfig` it runs first.
-- **Unverified:** the Secrets Manager secret, the provisioner reading
-  its value from there, and the script. They have run only in unit
-  tests with stubbed tools
-  (`tests/unit/test_argocd_admin_password_source.sh`,
-  `tests/unit/test_argocd_password_script.sh`); no build and no person
-  has run them yet: `pending clean-build verification`.
+- **Pending clean-build verification:** the Secrets Manager secret, the
+  provisioner reading its value from there, and the script. On the 2026-11-27 test build (bead kp-2al.54)
+  the seeded value logged in, `set` rotated it (new `AWSCURRENT`, old
+  `AWSPREVIOUS`) and the new value logged in; Live verify's
+  `argocd-admin-password-live` check passed. Unit tests with stubbed
+  tools cover the same paths (`tests/unit/test_argocd_admin_password_source.sh`,
+  `tests/unit/test_argocd_password_script.sh`). No person has run the
+  script yet, and the clean-build proof is the step 3 final build.
 
 ### Reading other Terraform outputs
 
@@ -485,9 +490,10 @@ page. To take access away, `remove` the account.
     same groups, and the full chain — Cognito account → Keycloak broker
     → federated `kubectl` — passed on clean builds #6 and #7.
 
-    *Unverified:* the script itself has run only against stubbed tools
-    (`tests/unit/test_k8p_cognito_user.sh`); nobody has run it against a
-    live build. Because the password is permanent, the user is never
+    *Pending clean-build verification:* on the 2026-11-27 test build (bead kp-2al.54) the script added a
+    user to `k8s-admins` (read back `CONFIRMED`), listed it and removed it
+    (verified absent), run from the ops box. It is also unit-tested
+    (`tests/unit/test_k8p_cognito_user.sh`). Because the password is permanent, the user is never
     prompted to change it; treat it as one to rotate
     (`add <email> --reset-password`).
 
@@ -501,8 +507,8 @@ page. To take access away, `remove` the account.
 | Argo CD has no SSO | The shared local `admin` account is the only login |
 | Argo CD browser sign-in (the local `admin` login; there is no Argo CD SSO) has never been exercised | Every attestation is via the `argocd` CLI or `kubectl`; the browser experience is unverified (`kp-2al.29`) |
 | No build creates a usable directory account | Section 4 is the admin doing it by hand on request; a composed or self-service account is a v2.0 item (`kp-2al.29`) |
-| Changing the Argo CD password is scripted but unverified | `k8p-argocd-password.sh set [--generate]` exists and is unit-tested; no build or person has run it |
-| The three admin scripts have not run against a live build | `k8p-kubeconfig.sh`, `k8p-cognito-user.sh` and `k8p-argocd-password.sh` are unit-tested against stubs only |
+| Changing the Argo CD password is scripted, not yet clean-build verified | `k8p-argocd-password.sh set` rotated the password on the 2026-11-27 test build; the step 3 final build is the clean-build proof |
+| The three admin scripts are not yet clean-build verified | All three ran from the ops box on the 2026-11-27 test build; none has run from a workstation, and the clean-build proof is the step 3 final build |
 | The Argo CD URL's certificate is not verified by the build | "Reachable" is attested; "valid public certificate" is not |
 | Facts are readable only by a hub admin | No read-only surface for anyone else |
 | No person has executed this page | Its marker stays `contract` until someone does |
