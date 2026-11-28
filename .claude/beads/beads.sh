@@ -20,12 +20,13 @@
 #   setup           everything the session needs (idempotent)
 #   session-start   SessionStart hook: setup, then the status line and `bd ready`; never fails
 #   status          one status line (the UserPromptSubmit hook)
+#   diagnose        read-only report for when beads isn't working (both environments)
 #   prepush-hook    PreToolUse(Bash) hook: before `git push` on a local machine, one `bd sync`
 #   sync-now        one `bd sync` now (local only)
 #   install | creds | start | sync-loop   the local steps, one at a time
 #
 # Overridable for tests: BEADS_REPO_ROOT, BEADS_DATA_DIR, BEADS_SYNC_INTERVAL,
-# BEADS_DETECT_RECHECK_SECS, BEADS_DOLT_INSTALL_DIR, BEADS_AIS_BIN, HOME.
+# BEADS_DETECT_RECHECK_SECS, BEADS_DOLT_INSTALL_DIR, BEADS_AIS_BIN, BEADS_DIAG_HOSTS, HOME.
 set -uo pipefail
 
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -394,6 +395,86 @@ cmd_status() {
     local_status
 }
 
+# ---- diagnose (read-only) -------------------------------------------------
+
+# Everything needed to say why beads isn't working, for either environment. Changes nothing;
+# never prints the DoltHub key. Every section prints something, "NONE" when empty.
+section() { printf '\n== %s\n' "$1"; }
+show() { # <text>: the text, or NONE
+    if [ -n "$1" ]; then printf '%s\n' "$1"; else echo NONE; fi
+}
+code_meaning() {
+    case "$1" in
+        0) echo "synced" ;; 1) echo "ERROR (see sync-loop.log)" ;;
+        2) echo "MERGE CONFLICT, nothing pushed" ;; 3) echo "transient (network?), retried" ;;
+        4) echo "STUCK WORKING SET, nothing pushed" ;; *) echo "unknown" ;;
+    esac
+}
+
+cmd_diagnose() {
+    local db env have_bd have_dolt
+    db=$(db_name)
+    if on_host; then env=host; else env=local; fi
+    echo "beads diagnose: repo $ROOT, database ${db:-NONE (no dolt_database in .beads/metadata.json)}, environment $env"
+    have_bd=$(bd_version)
+    have_dolt=$(dolt version 2>/dev/null | sed -n 's/^dolt version \([0-9][^ ]*\).*/\1/p' | head -n 1)
+    section "versions (installed / pinned in .claude/beads/versions.env)"
+    echo "bd   ${have_bd:-not installed} / $BD_VERSION$([ "$have_bd" = "$BD_VERSION" ] || echo '  !! MISMATCH')"
+    echo "dolt ${have_dolt:-not installed} / $DOLT_VERSION$([ "$have_dolt" = "$DOLT_VERSION" ] || echo '  !! MISMATCH')"
+    section "repo files"
+    echo ".beads mode $(stat -c %a "$ROOT/.beads" 2>/dev/null || echo missing); beads.role $(git -C "$ROOT" config --get beads.role 2>/dev/null || echo unset)"
+    echo "uncommitted changes to beads files: $(git -C "$ROOT" status --short -- .beads .claude/beads .claude/settings.json 2>/dev/null | tr '\n' ';' | grep . || echo NONE)"
+    if [ -f "$ROOT/.beads/.env" ]; then
+        echo ".beads/.env (overrides metadata.json): $(grep -v '^#' "$ROOT/.beads/.env" | tr '\n' ' ')"
+    else
+        echo ".beads/.env: none (metadata.json decides)"
+    fi
+    section "bd status"
+    show "$( (cd "$ROOT" && bd status --json 2>&1) | head -n 15)"
+    if [ "$env" = host ]; then
+        section "host: ai-sandbox-beads-status"
+        show "$("$AIS_BIN/ai-sandbox-beads-status" "$ROOT" 2>&1)"
+        section "host: sync log, this database and halts (last 15)"
+        show "$(grep -E " ${db:-.} |HALT|RESUME" "$AIS_STATE/beads-sync.log" 2>/dev/null | tail -n 15)"
+        echo
+        echo "next: the beads skill's \"Diagnosing\" section (host); resolving halts is in the beads-onboarding skill"
+        return 0
+    fi
+    section "local: environment"
+    echo "CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-unset}; DoltHub key in env: $([ -n "${DOLTHUB_CREDS_JWK:-${DOLT_CREDS_JWK:-}}" ] && echo yes || echo NO)"
+    if command -v dolt >/dev/null 2>&1; then
+        echo "dolt creds check: $(dolt creds check >/dev/null 2>&1 && echo ok || echo FAILED)"
+    fi
+    for h in ${BEADS_DIAG_HOSTS-doltremoteapi.dolthub.com registry.npmjs.org github.com}; do
+        # shellcheck disable=SC2016  # $0 is expanded by the inner bash
+        echo "reach $h:443: $(timeout 5 bash -c 'exec 3<>"/dev/tcp/$0/443"' "$h" 2>/dev/null && echo ok || echo FAILED)"
+    done
+    section "local: processes"
+    echo "server pid $(cat "$SERVER_PID" 2>/dev/null || echo none): $(pid_alive "$SERVER_PID" && echo alive || echo NOT RUNNING); answers on $LOCAL_HOST:$PORT: $(probe "$LOCAL_HOST" "$PORT" && echo yes || echo NO)"
+    echo "sync loop pid $(cat "$LOOP_PID" 2>/dev/null || echo none): $(pid_alive "$LOOP_PID" && echo alive || echo NOT RUNNING)"
+    echo "foreign bd/dolt: $(RECHECK_SECS=0 foreign_report | tr '\n' ';' | sed 's/;$//' | grep . || echo NONE)"
+    section "local: last sync (.beads/sync-loop.status)"
+    if [ -f "$STATUS_FILE" ]; then
+        local code ts
+        read -r code ts <"$STATUS_FILE"
+        echo "code $code ($(code_meaning "$code")), $(( $(date +%s) - ${ts:-0} ))s ago"
+    else
+        echo NONE
+    fi
+    section "local: database"
+    echo "data dir $DATA_DIR/$db: $([ -d "$DATA_DIR/$db" ] && echo present || echo MISSING)"
+    if probe "$LOCAL_HOST" "$PORT" && [ -n "$db" ]; then
+        show "$( (cd / && dolt --host "$LOCAL_HOST" --port "$PORT" --no-tls -u root -p "" --use-db "$db" sql -r csv \
+            -q "SELECT name, url FROM dolt_remotes" 2>&1) | sed 's/^/remote: /')"
+    fi
+    section "local: server.log (last 10)"
+    show "$(tail -n 10 "$SERVER_LOG" 2>/dev/null)"
+    section "local: sync-loop.log (last 10)"
+    show "$(tail -n 10 "$LOOP_LOG" 2>/dev/null)"
+    echo
+    echo "next: the beads skill's \"Diagnosing\" section (cloud sandbox)"
+}
+
 # ---- setup and hooks ------------------------------------------------------
 
 cmd_setup() {
@@ -484,6 +565,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
         setup) cmd_setup ;;
         session-start) cmd_session_start ;;
         prepush-hook) cmd_prepush_hook ;;
-        *) printf 'usage: %s {detect|setup|session-start|status|prepush-hook|sync-now|install|creds|start|sync-loop}\n' "$0" >&2; exit 2 ;;
+        diagnose) cmd_diagnose ;;
+        *) printf 'usage: %s {detect|setup|session-start|status|diagnose|prepush-hook|sync-now|install|creds|start|sync-loop}\n' "$0" >&2; exit 2 ;;
     esac
 fi

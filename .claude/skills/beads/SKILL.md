@@ -31,7 +31,7 @@ The task graph is a Dolt database on DoltHub, `k8s-platform` (`sync.remote` in `
 | Server | ai-sandbox's shared server, 127.0.1.1:3307, every repo's database | one this session starts, 127.0.0.1:3307, this repo's only |
 | Sync with DoltHub | the host, every minute (`ai-sandbox-beads-status`) | a background `bd sync` every minute, and one before every `git push` |
 | Status line | `host-sync ok Ns ago` | `last-sync=<code> Ns ago` |
-| When it's broken | the `beads-onboarding` skill (troubleshooting) | `bash .claude/beads/beads.sh setup`, which says why |
+| When it's broken | `bash .claude/beads/beads.sh diagnose`, then [Diagnosing](#diagnosing-when-the-status-line-says-unavailable-or--or-bd-misbehaves) below; halts: the `beads-onboarding` skill | `bash .claude/beads/beads.sh diagnose`, then Diagnosing below |
 
 The hooks already do everything: SessionStart runs `.claude/beads/beads.sh session-start`, every
 prompt shows the status line, and on a cloud sandbox every `git push` runs one `bd sync` first
@@ -49,12 +49,54 @@ never both at once. Both sync with the same DoltHub database: if both wrote, the
 server on purpose (it never merges by itself) and the owner sorts it out. Before the owner
 switches, the last sync must be newer than the last write (the status line shows it).
 
-**When `beads: UNAVAILABLE` or STOPPED ON PURPOSE:**
-- ai-sandbox host: use the `beads-onboarding` skill. Only the owner restarts a stopped server.
-- cloud sandbox: run `bash .claude/beads/beads.sh setup`. `no DoltHub key` means the cloud
-  environment lacks the `DOLTHUB_CREDS_JWK` variable (or its network policy blocks
-  doltremoteapi.dolthub.com): tell the owner. `FOREIGN bd/dolt PROCESSES`: report them; never
-  kill them or start a second server.
+### Diagnosing (when the status line says UNAVAILABLE or `!!`, or bd misbehaves)
+
+Start with `bash .claude/beads/beads.sh diagnose`: read-only, both environments, every section
+prints something. Match its output below. Explain the cause and the options to the owner; ask
+before anything that discards or overwrites data; never start a second server, edit beads by
+hand, or bypass the pre-push sync.
+
+**ai-sandbox host**
+1. `ai-sandbox-beads-status` says **STOPPED ON PURPOSE**: that is the cause; skip the rest. Only
+   the owner restarts it. The reason names it:
+   - `diverged`: both sides wrote. Usually a handover with unsynced writes (the host went away
+     within a minute of a write, then a cloud session started from DoltHub's older copy), a
+     write within a minute of the host waking, or a cloud session that started before the host
+     had pushed. The sync log's times show which side wrote when.
+   - `no dolthub remote` / `remote(s) other than dolthub`: a database got onto the server outside
+     onboarding (a plain `bd init`, `bd bootstrap` or `DOLT_CLONE`).
+   - `class=soft` after a run of errors: offline (or DoltHub down) for 15 minutes.
+   - auth: the host's DoltHub key was removed or expired.  `sync-failed`: the sync crashed.
+
+   Resolving (backups, merge or keep one side, resume): the `beads-onboarding` skill.
+2. Running, but bd can't read the database: `bash .claude/beads/beads.sh setup` re-clones it if
+   the server lacks it. A project id mismatch means the clone and the database disagree: tell the
+   owner. `the repo kit pins X`: the kit is older than the host's bd; refresh it
+   (`ai-sandbox-beads-repo-kit`, a PR).
+3. `host-sync` stale (over 3 minutes): the host's sync timer isn't running; `ai-sandbox-status`.
+
+**Cloud sandbox**
+- `DoltHub key in env: NO`: the cloud environment lacks `DOLTHUB_CREDS_JWK`; the owner adds it in
+  the environment's settings. No task graph this session.
+- `dolt creds check: FAILED` with a key: the key isn't (or is no longer) registered on DoltHub.
+- `reach <host>: FAILED`: the environment's network policy blocks it (doltremoteapi.dolthub.com
+  for the data, registry.npmjs.org for bd, github.com for dolt): the owner allows it.
+- A version `MISMATCH` or `not installed`: the install failed (blocked download, or a dolt
+  SHA-256 mismatch in the session-start output). Fix the cause, then `setup`. Never install
+  another version: an older or newer bd than the pin can damage or refuse the database.
+- Server `NOT RUNNING` or not answering: `server.log`. `Port 3307 already in use` with a foreign
+  dolt listed: report it to the owner. Otherwise `setup`.
+- Data dir `MISSING` after setup: `bd bootstrap` failed; `server.log` says why (auth;
+  `contains no Dolt data` means the DoltHub database is empty and onboarding wasn't finished).
+- Sync loop `NOT RUNNING`, or the last sync old: the background loop died. `setup` restarts it;
+  say so in your report (it matters for the round-trip test beads).
+- Last sync code 1: `sync-loop.log`. Code 3: network, retried each minute. **Code 2 (merge
+  conflict) or 4 (stuck working set): nothing was pushed.** Don't resolve it yourself: back up
+  first (`cp -a ~/.beads-dolt/<db> ~/beads-backup-$(date +%Y%m%dT%H%M)`), then tell the owner.
+  Both places wrote (the cloud session started while the host had unsynced writes, or both were
+  active at once).
+- A remote other than this repo's DoltHub URL, or `.beads/metadata.json` modified after setup:
+  the committed beads files don't match the kit; refresh the kit from the ai-sandbox host.
 
 **Who you are to bd.** The actor is git's `user.name` unless `--actor` is given: `Claude` in a
 cloud sandbox, often the owner's name on the host. A bead assigned to someone else needs
