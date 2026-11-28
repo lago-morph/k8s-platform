@@ -143,7 +143,11 @@ These variables are for bd 1.3.4 only. Strip all three from every bd 1.2.2 comma
 
 ### 3.0 Prepare
 
-0. **Shared-sandbox check, before anything else.** If `~/.local/state/ai-sandbox` exists, this machine is a shared sandbox with its own beads server, and the migration must not run here. Do not install bd or dolt, do not start a server, do not sync. Report to the owner and stop. The cloud sandbox used for this migration has no such directory (checked 2026-11-28).
+0. **Shared-sandbox and running-process check, before anything else.**
+   - If `~/.local/state/ai-sandbox` exists, this machine is a shared sandbox with its own beads server, and the migration must not run here.
+   - If any `dolt` process is running (`pgrep -a -x dolt`), something is already being served. The same goes for a `bd` process still running after a 5-second re-check (`pgrep -a -x bd`); the repo's own 1.2.2 hooks run short-lived `bd` commands, which are expected.
+   - In either case: do not install bd or dolt, do not start a server, do not sync. Report to the owner immediately and stop.
+   - The cloud sandbox in the research session had no marker directory and no `bd` or `dolt` processes (checked 2026-11-28).
 1. **Baseline.** `git ls-remote origin refs/heads/beads-dolt-data` must equal `b08e137…`; if not, stop. `bd version` must be 1.2.2, and `bd list --all -n 0 --json` must return 175 records.
 2. **Tools.**
    - Download `https://github.com/dolthub/dolt/releases/download/v2.7.7/dolt-linux-amd64.tar.gz` to `/tmp/dolt277`, check it against the SHA-256 in Part 2, and unpack it there.
@@ -312,9 +316,15 @@ None of this was tested in the research session. It is the design for one PR, op
 
    **Owner rule: never start a bd or dolt server when one is already running on the machine.**
 
+   - **Foreign processes:** a `dolt` process (`pgrep -x dolt`), or a `bd` process that is still there on a re-check 5 s later (`pgrep -x bd`). Transient `bd` commands are expected. Processes whose PIDs are in this script's own PID files (server and sync loop) are **not** foreign; they are this script's own processes from an earlier run, since SessionStart reruns on resume, clear and compact.
    - Marker: the directory `~/.local/state/ai-sandbox` exists. Its sync log is `~/.local/state/ai-sandbox/beads-sync.log`, and its state file is `~/.local/state/ai-sandbox/beads-sync.state`.
-   - If the marker is **absent**, this is an ordinary cloud sandbox: run `install`, `creds`, `start` and `sync-loop` below.
+   - If the marker is **absent** and there are **no foreign processes**, this is an ordinary cloud sandbox: run `install`, `creds`, `start` and `sync-loop` below.
+   - If the marker is **absent** but **foreign `bd` or `dolt` processes are running**, something unknown is serving on this machine, which is bad:
+     - Set up nothing: no install, no server, no sync.
+     - Tell the user immediately, listing the processes (`pgrep -a`).
+     - Exit non-zero.
    - If the marker is **present**:
+     - Running `bd` or `dolt` processes are expected here, because the shared server is one of them.
      - **Healthy:** a server answers at **127.0.1.1:3307**, user `root`, no password (for example `dolt --host 127.0.1.1 --port 3307 --no-tls -u root -p "" sql -q "SELECT 1"`), **and** `beads-sync.state` contains no record matching `beads-sync-HALTED`. Use that server:
        - Point bd at it with `BEADS_DOLT_SERVER_HOST=127.0.1.1` and `.beads/dolt-server.port` = `3307`.
        - Run **none** of `install`, `creds`, `start` or `sync-loop`. The shared sandbox does its own syncing, logged in `beads-sync.log`.
@@ -323,7 +333,18 @@ None of this was tested in the research session. It is the design for one PR, op
        - Install nothing, start nothing, sync nothing.
        - Print a loud message naming which check failed and pointing at `beads-sync.log`.
        - Exit non-zero, so the session-start hook and the status line tell the user something is wrong. Do not try to repair it.
-   - The host is `127.0.1.1`, not `127.0.0.1`, as the owner specified.
+   - The host is `127.0.1.1`, not `127.0.0.1`. This is intentional (owner, 2026-11-28).
+
+   Decision table:
+
+   | `~/.local/state/ai-sandbox` | Foreign `bd`/`dolt` processes | Server at 127.0.1.1:3307 | `beads-sync-HALTED` in `beads-sync.state` | Action |
+   |---|---|---|---|---|
+   | absent | none | — | — | Normal path: install, creds, start, sync-loop |
+   | absent | running | — | — | Stop. Set up nothing, tell the user immediately |
+   | present | (expected) | answers | absent | Use the shared server. Install, start and sync nothing |
+   | present | (expected) | answers | present | Stop. Set up nothing, report broken shared config |
+   | present | (expected) | no answer | absent | Stop. Set up nothing, report broken shared config |
+   | present | (expected) | no answer | present | Stop. Set up nothing, report broken shared config |
 1. **`install`**:
    - `npm install -g @beads/bd@$BD_VERSION` unless `bd version` already matches.
    - Download dolt `$DOLT_VERSION` from `https://github.com/dolthub/dolt/releases/download/v$DOLT_VERSION/dolt-linux-amd64.tar.gz`, refuse it unless `sha256sum` equals `$DOLT_SHA256`, and install `bin/dolt` to `/usr/local/bin/dolt`.
@@ -358,6 +379,7 @@ None of this was tested in the research session. It is the design for one PR, op
 - `bash -n` and shellcheck on the new script.
 - `BD_VERSION`, `DOLT_VERSION` and `DOLT_SHA256` read from `versions.env`, not hardcoded.
 - The PID-file guard makes a second `sync-loop` a no-op (stub `bd`).
+- `detect`, with stub `pgrep`: marker absent plus a foreign `dolt` or persistent `bd` leads to a non-zero exit with nothing installed or started. PIDs listed in the script's own PID files are ignored.
 - `detect`, with a fake `HOME`: marker absent leads to the normal path. Marker plus a reachable stub server and no HALTED record leads to the shared path, and `install`, `start` and `sync-loop` are never called. Marker with no server, with a HALTED record, or with both leads to a non-zero exit with nothing installed or started.
 - `creds` never prints the variable (stub `dolt`).
 - No tracked file except archives still references `beads-sync.sh`, `beads-dolt-data` or `embeddeddolt`.
