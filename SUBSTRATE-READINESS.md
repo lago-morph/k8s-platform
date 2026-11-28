@@ -48,6 +48,41 @@ A live hand-fix is **NOT** evidence. It validates the *mechanism*, never the *ar
 
 ## The readiness checklist
 
+**Clean build #11 — 2026-11-28, a NEW account (`599626541016`), the step 3 <!-- noqa: account-id - run provenance, account rotates -->
+exit build (kp-2al.48)**
+**(eleventh from-scratch build; executed by Claude from `main` `01ffd02` with
+the ops box and `k8p-bringup.sh`, no hand fixes. First clean build on
+Kubernetes 1.37, 2× m5.large per cluster, Argo CD v3.6.3, pinned EKS add-ons,
+EKS control-plane logging, TLS 1.2+ NLB policy, the ASM-stored Argo CD
+password, and the full-verdict Live verify (mutating, strict skips).)**
+Build chain: Ops box **46084937656** `apply` (console URL printed with the
+region unmasked) → `k8p-bringup.sh` started through `ssm send-command` with
+`HOME` unset (kp-2al.55 fix proven) → base **46085345441** (3m28s) →
+management **46085696625** → gate 1 synced at `01ffd02` → gate 2 → stack
+converged in 64 s (17 Applications, `workload1-cluster` OutOfSync by design,
+no re-sync) → hello HTTP 200 → BRING-UP COMPLETE 00:45:30Z; driver log copied
+to the state bucket under `k8p-bringup/`.
+**Live verify:** **46089681676** at `01ffd02` — attempt 1 (00:46Z, right after
+the bring-up) and attempt 2 read `pass=29 skip=0 fail=1`: the federation check
+got correct claims but the spoke API answered Unauthorized while its IdP config
+was ACTIVE, the EKS propagation lag the bring-up page documents; attempt 3
+(about 01:01Z, 12 minutes later) **`pass=30 skip=0 fail=0`**. The check now waits
+through that window (PR #293, kp-2al.57); Live verify from that branch
+**46091319915** and on `main` after merging it **46091564516** (`f57212c`):
+**`pass=30 skip=0 fail=0 expect-full-violations=0`**.
+**Also verified on this build:** both clusters 1.37 ACTIVE with api/audit/
+authenticator control-plane logs; add-ons at the pins (coredns
+v1.14.7-eksbuild.35, kube-proxy v1.37.0-eksbuild.39, vpc-cni
+v1.23.3-eksbuild.2, spoke aws-ebs-csi-driver v1.68.1-eksbuild.1); both NLB
+listeners `ELBSecurityPolicy-TLS13-1-2-2021-06`, TLS 1.1 refused by the
+server; `k8p-kubeconfig.sh` from the ops box `RESULT: PASS 2/2`.
+**Findings:** kp-2al.57 (federation timing, fixed #293); kp-zab.20 (the
+driver prints an empty hello body from a cached DNS miss; cosmetic).
+**Preceded by** a test build on account `478728046113` (kp-2al.54, not a clean <!-- noqa: account-id - run provenance, account rotates -->
+build: Argo CD was upgraded in place mid-build) that found Argo CD 2.10
+cannot manage Kubernetes ≥ 1.35 (`.status.terminatingReplicas` schema gap;
+fixed by PR #292, Argo CD v3.6.3) and proved every new script live.
+
 **Clean build #10 — 2026-11-27, a NEW account (`637423636571`), the <!-- noqa: account-id - run provenance, account rotates -->
 OWNER's bring-up**
 **(tenth from-scratch build; the first executed by a PERSON following

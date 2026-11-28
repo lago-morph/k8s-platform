@@ -9,29 +9,18 @@ shortest time — is in the epic: `bd show kp-2al`.** Keep this file short:
 replace stale facts, never append narrative. The pre-2026-09-08 handoff
 is archived verbatim at `docs/archive/handoff-2026-09-08.md`.
 
-## Build #10 — the owner's bring-up, 2026-11-27
+## Clean build #11 — step 3 exit, 2026-11-28
 
-The owner executed `docs/site/how-to/build-the-platform-from-nothing.md`
-on a fresh account (`637423636571`, us-east-1) from `main` <!-- noqa: account-id - run provenance, account rotates -->
-`35eee974c79fbe0c49359352f44a03aced3ddce4` (kp-2al.10, closed). The
-account has since **timed out**; nothing is running anywhere.
+Built by Claude from `main` `01ffd02` on a NEW account (`599626541016`, <!-- noqa: account-id - run provenance, account rotates -->
+us-east-1); full record in `SUBSTRATE-READINESS.md`. Live verify
+`pass=30 skip=0 fail=0` (46089681676 attempt 3; 46091564516 on `main`
+`f57212c` after #293). **The platform is UP**: hub and spoke EKS 1.37
+(2× m5.large each), relay `t3.nano`, ops box `t3.small`
+(`i-0ea2e74b02335bec2`). Teardown: owner decides (delete the account, or
+`docs/site/how-to/tear-the-platform-down.md`).
 
-| Fact | Value |
-|---|---|
-| Ops box `apply` | 45939416156 |
-| base / management | 45940909805 / 45941267372 |
-| driver | `k8p-bringup.sh` BRING-UP COMPLETE 06:57:31Z, gate SHA `35eee97`, hello 200 |
-| Session Manager | browser shell opened by a person from the console: `uid=1001(ssm-user)` in the `k8-platform` checkout |
-| Live verify (old producer) | 45955338643: `pass=17 skip=12 fail=0` |
-| the 12 skipped, owner-run | RUN_ID `owner-1127-0715`, mutating, harness `35eee97`: 12/12 PASS, 308 s |
-| Live verify (new producer, PR #278) | 45959888007 at `ee427fc`: `pass=29 skip=0 fail=0`, 1m36s; 45960453458 after #277 merged: `pass=29 skip=0` |
-| shape | hub 3× t3.medium, spoke 2× t3.medium on Kubernetes 1.32 (built before #277) |
-| finding | console URL region masked as `***` (kp-2al.36) |
-
-Merged since: PR #277 (`ceccbd8`, 2× m5.large, node type and version
-single-sourced, spoke 1.35; Live-evidence gate red by owner exception,
-kp-ifh) and PR #278 (`738e12a`, Live verify full verdict). Neither the
-m5.large shape nor spoke 1.35 has run on a build yet.
+Step 3 PRs merged 2026-11-27/28: #277-#293. Earlier records (builds #9, #10)
+are in `SUBSTRATE-READINESS.md`.
 
 ## Environment state
 
@@ -41,9 +30,9 @@ build is in progress, record the chain here as facts (probe → base →
 management → gate SHAs → oracle RUN_ID → live-verify run ID) and move
 them into `SUBSTRATE-READINESS.md` when the build completes.
 
-No account is live (2026-11-27). Build #10 ran on `637423636571`, which <!-- noqa: account-id - run provenance, account rotates -->
-has timed out; build #9's `851725259254` is gone too. Build records are <!-- noqa: account-id - run provenance, account rotates -->
-in `SUBSTRATE-READINESS.md`.
+Live account: `599626541016` (clean build #11, all phases applied). Builds <!-- noqa: account-id - run provenance, account rotates -->
+#9-#10 and the 2026-11-27 test build ran on accounts that are gone; their
+records are in `SUBSTRATE-READINESS.md`.
 
 Build #8 state as verified 2026-09-10 (NEW account, us-east-1 — a
 genuinely fresh account, not a reset one; built entirely from `main`
