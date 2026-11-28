@@ -96,18 +96,20 @@ Start it on the branch that contains this file, and point the agent at
 | Migration 0062 makes `events` clone-local: new events never push. Rows committed before the flip stay in the remote's **history**, but a fresh clone's `events` table is empty (#7039, unfixed in 1.3.4). **Never run `bd compact` or `bd flatten`** on a clone | v1.3.4 CHANGELOG 36-41, 1785-1795 |
 | Migration 0061 rekeys every comment, event and snapshot ID | v1.3.4 CHANGELOG 1766-1783 |
 | Server-mode consent: with **no** Dolt remote, `bd migrate schema` is the consent; with any remote it needs `--force` | v1.3.4 `schema/remote_migrate_gate.go:1100-1158` |
-| Server-mode push/pull run as `CALL DOLT_PUSH/PULL` inside the server when the workspace has no local `.beads/dolt/kp/.dolt`, so they use the **server process's** dolt credentials (`DOLT_ROOT_PATH`) | v1.3.4 `storage/dolt/store.go:3900-3913, 4253-4350` |
+| Server-mode push/pull run as `CALL DOLT_PUSH/PULL` inside the server when the workspace has no local `.beads/dolt/<database>/.dolt`, so they use the **server process's** dolt credentials (`DOLT_ROOT_PATH`) | v1.3.4 `storage/dolt/store.go:3900-3913, 4253-4350` |
 | The workspace is treated as an external server when `metadata.json` has `dolt_server_port` (or `BEADS_DOLT_SERVER_MODE=1`) | v1.3.4 `doltserver/servermode.go` |
 | **Route: bd's documented embedded→server migration**: `bd backup` (1.2.2) → `bd init --server` (1.3.4) → `bd backup restore --force` (1.3.4). It preserves full Dolt commit history | v1.3.4 `docs/architecture/dolt.md:293-358` |
 | "Make a backup" in 1.2.2 is two commands: `bd backup init <dir>` (sets the destination) then `bd backup sync` (writes it). Bare `bd backup` prints help and exits 0. `sync` first commits any pending changes (`bd: pre-backup commit`) | v1.2.2 `cmd/bd/backup_dolt.go:73-96, 136-161`; v1.3.4 `docs/getting-started/upgrading.md:167-174` |
-| 1.3.4 `bd backup restore` accepts only a local directory (no URL), runs `CALL DOLT_BACKUP('restore','--force',<file url>,'kp')` on the server, then copies the restored `_project_id` into `metadata.json`. bd and the server must both read the backup at the same absolute path | v1.3.4 `versioncontrolops/backup.go:37-48, 107-124`; `cmd/bd/backup_restore.go:105-120` |
+| 1.3.4 `bd backup restore` accepts only a local directory (no URL), runs `CALL DOLT_BACKUP('restore','--force',<file url>,<dolt_database>)` on the server, then copies the restored `_project_id` into `metadata.json`. bd and the server must both read the backup at the same absolute path | v1.3.4 `versioncontrolops/backup.go:37-48, 107-124`; `cmd/bd/backup_restore.go:105-120` |
 | The restore does **not** migrate. The v53 → v66 migration runs only with explicit consent afterwards: `bd migrate schema`, plus `--force` if the database has any Dolt remote | v1.3.4 `schema/remote_migrate_gate.go:857-872, 1100-1158` |
+| Local database name is **`k8s-platform`**, the same as on DoltHub. The prefix stays `kp`; the two are independent. `dolt sql-server` names each database after its directory under `--data-dir`, so the clone directory must equal `dolt_database`. bd only turns hyphens into underscores when it *derives* the name from the prefix (`init.go:1165-1185`); explicit names may contain hyphens (`storage/dolt/history.go:19`, `^[a-zA-Z_][a-zA-Z0-9_\-]*$`) | v1.3.4 source |
+| Tested in the research session: dolt 2.7.7 serves a database named `k8s-platform` (create, insert, commit). bd 1.3.4 `init --server --prefix kp --database k8s-platform` against a pre-existing `k8s-platform` database adopted it (no stray `kp` database, schema v66, `dolt_database: k8s-platform`). `bd create` and `bd list` then worked, and the workspace's `.beads/dolt/` stayed empty, so push and pull go through the server | probes in `/tmp` |
 | `bd init --server` needs `BEADS_DIR` set when run outside a git repo (otherwise it runs `git init`). It writes a new `project_id`, which the restore then replaces | v1.3.4 `cmd/bd/init.go:1128-1139, 160, 1682` |
 
 Not verified, so watch for these:
 - authenticated push to DoltHub
 - whether a clone of the empty DoltHub database works. If it fails, let
-  `bd init --server` create `kp` and add the DoltHub remote after the restore
+  `bd init --server` create `k8s-platform` and add the DoltHub remote after the restore
 - whether `origin` survives `bd backup restore --force`. Check
   `SELECT * FROM dolt_remotes` after the restore and re-add it if it is gone
 - a push rejected as non-fast-forward: stop and report. Do not force-push
@@ -173,16 +175,16 @@ Removing `origin` from the copy is a safety step. That remote is the GitHub bran
 ### 3.2 Start the 1.3.4 server, pointed at the synced DoltHub database
 
 ```bash
-mkdir -p $M/server-data && cd $M/server-data && $DOLT clone "$URL" kp   # the empty DoltHub database, locally named kp
+mkdir -p $M/server-data && cd $M/server-data && $DOLT clone "$URL" k8s-platform   # the empty DoltHub database, same name locally
 cd $M && nohup $DOLT sql-server --data-dir $M/server-data --host 127.0.0.1 --port 3307 > $M/server.log 2>&1 &
 ```
 
-Run the reset check from v1.3.4 `docs/architecture/dolt.md:88-104` against `kp`:
+Run the reset check from v1.3.4 `docs/architecture/dolt.md:88-104` against `k8s-platform`:
 - `SELECT * FROM dolt_status` returns no rows.
 - `SELECT 1` succeeds.
 - `CALL DOLT_RESET('--hard')` succeeds. `Error 1105 … context canceled` means stop.
 
-If the clone of the empty database fails, skip it, start the server on the empty data dir, and let step 3.3 create `kp`. Then add the remote in step 3.5.
+If the clone of the empty database fails, skip it, start the server on the empty data dir, and let step 3.3 create `k8s-platform`. Then add the remote in step 3.4.
 
 ### 3.3 `bd init --server` with bd 1.3.4
 
@@ -190,10 +192,10 @@ If the clone of the empty database fails, skip it, start the server on the empty
 mkdir -p $M/ws && cd $M/ws
 BEADS_DIR=$M/ws/.beads BEADS_DOLT_AUTO_START=0 $BD134 init --server \
   --server-host 127.0.0.1 --server-port 3307 --server-user root \
-  --prefix kp --non-interactive --skip-hooks --skip-agents
+  --prefix kp --database k8s-platform --non-interactive --skip-hooks --skip-agents
 ```
 
-Confirm that `$M/ws/.beads/metadata.json` has `dolt_mode: server`, `dolt_database: kp` and `dolt_server_port: 3307`.
+Confirm that `$M/ws/.beads/metadata.json` has `dolt_mode: server`, `dolt_database: k8s-platform` and `dolt_server_port: 3307`. bd 1.3.4 then warns on every command that `dolt_server_port` in `metadata.json` is deprecated in favour of `.beads/dolt-server.port`. In the research test it did not affect `bd create` or `bd list`.
 
 ### 3.4 Restore and migrate with bd 1.3.4
 
@@ -201,7 +203,7 @@ Confirm that `$M/ws/.beads/metadata.json` has `dolt_mode: server`, `dolt_databas
 cd $M/ws
 export BEADS_DIR=$M/ws/.beads BEADS_DOLT_AUTO_START=0
 $BD134 backup restore --force $M/kp-backup
-$BD134 migrate schema --force        # --force because kp has the DoltHub remote; without a remote, drop it
+$BD134 migrate schema --force        # --force because the database has the DoltHub remote; without a remote, drop it
 $BD134 recompute-blocked
 ```
 
@@ -231,13 +233,13 @@ This compares the migrated server against the 1.2.2 repo database and the R2 exp
 cd $M/ws && $BD134 dolt push
 ```
 
-If the push is rejected or authentication fails, stop and report. Then stop the server and tar `$M/server-data/kp` as an archive: it holds the 738 events locally, and those no longer push. Ask the owner before uploading that tar to R2.
+If the push is rejected or authentication fails, stop and report. Then stop the server and tar `$M/server-data/k8s-platform` as an archive: it holds the 738 events locally, and those no longer push. Ask the owner before uploading that tar to R2.
 
 ### 3.7 Delete, re-sync from DoltHub, compare #2
 
 1. Stop the server.
-2. `rm -rf $M/server-data/kp`.
-3. `cd $M/server-data && $DOLT clone "$URL" kp`.
+2. `rm -rf $M/server-data/k8s-platform`.
+3. `cd $M/server-data && $DOLT clone "$URL" k8s-platform`.
 4. Start the server again.
 5. Repeat 3.5 against it.
    - Expected: `events` may be empty.
