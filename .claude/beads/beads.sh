@@ -62,6 +62,10 @@ die() { say "$*"; exit 1; }
 
 on_host() { [ -x "$AIS_BIN/ai-sandbox-beads-status" ]; }
 
+# bd needs the port too: on the host it is in ~/.config/bd/config.yaml, but nowhere else, and
+# without it `bd bootstrap` dials port 0 (found in the first cloud run, 2026-11-28). The port file
+# below gives it to the agent's own bd commands as well.
+export BEADS_DOLT_SERVER_PORT="$PORT"
 if on_host; then
     export BEADS_DOLT_SERVER_HOST="$HOST_HOST"
 else
@@ -302,6 +306,8 @@ cmd_start() {
         probe "$LOCAL_HOST" "$PORT" || die "server did not answer on $LOCAL_HOST:$PORT (see $SERVER_LOG)"
         say "server started (pid $(cat "$SERVER_PID"))"
     fi
+    # bd reads the server's port from here (k8s-platform's script did this; the kit had dropped it).
+    echo "$PORT" >"$ROOT/.beads/dolt-server.port"
     if [ ! -d "$DATA_DIR/$db" ]; then
         # `bd bootstrap`, never a plain `dolt clone`: a dolt clone lacks bd's machine-local
         # tables (leases, events, wisps, ...) and bd can't open it.
@@ -494,17 +500,26 @@ cmd_setup() {
 }
 
 cmd_session_start() {
-    if (cmd_setup); then
-        if on_host && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-            echo "export BEADS_DOLT_SERVER_HOST=$HOST_HOST" >>"$CLAUDE_ENV_FILE"
+    # A SessionStart hook's stdout is what the session sees; stderr isn't. So setup's messages go
+    # to a file, shown on stdout when it fails (a silent failure left the first cloud run guessing).
+    local out
+    out=$(mktemp)
+    if (cmd_setup) >"$out" 2>&1; then
+        rm -f "$out"
+        if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+            printf 'export BEADS_DOLT_SERVER_HOST=%s BEADS_DOLT_SERVER_PORT=%s\n' \
+                "$BEADS_DOLT_SERVER_HOST" "$PORT" >>"$CLAUDE_ENV_FILE"
         fi
         # One status line and the ready queue (not `bd prime`: its generic session-close text
         # conflicts with repos' own rules).
         cmd_status
         (cd "$ROOT" && bd ready 2>/dev/null | head -n 20) || true
     else
-        say "setup FAILED: no task graph this session (message above). See the beads skill."
-        cmd_status >&2
+        echo "beads: setup FAILED, no task graph this session. Setup said:"
+        sed 's/^/  /' "$out"
+        rm -f "$out"
+        cmd_status
+        echo "beads: next: bash .claude/beads/beads.sh diagnose, then the Diagnosing section of the beads skill"
     fi
     return 0
 }
