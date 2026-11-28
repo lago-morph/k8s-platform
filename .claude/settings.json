@@ -8,7 +8,9 @@
     "allow": [
       "mcp__Claude_Code_Remote",
       "mcp__Jentic",
-      "mcp__github"
+      "mcp__github",
+      "Bash(bash .claude/beads/beads.sh:*)",
+      "Bash(bash \"$CLAUDE_PROJECT_DIR/.claude/beads/beads.sh\":*)"
     ],
     "deny": [
       "Bash(bd init:*)",
