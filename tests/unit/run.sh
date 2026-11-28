@@ -194,7 +194,7 @@ run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
 # beads server mode (ai/beads-dolthub.md): shared-sandbox / foreign-process
 # detection, pins from versions.env, PID-guarded sync loop, key never
 # printed, fresh clones via `bd bootstrap` (a plain dolt clone is unreadable).
-run_suite tests/unit/test_beads_server.sh
+run_suite tests/unit/test_beads_kit.sh
 
 # kp-2al.24: operator guidance must confirm a gate sync by the completed
 # OPERATION, never by .status.sync.revision (which Argo sets from the observed

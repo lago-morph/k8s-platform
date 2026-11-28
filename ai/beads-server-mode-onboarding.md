@@ -1,5 +1,13 @@
 # Onboarding a repository to beads in server mode on DoltHub
 
+> **Superseded for new repositories (2026-11-28).** The onboarding skill this
+> document seeded now exists: ai-sandbox's `beads-onboarding` skill and its
+> **repo kit** (`ai-sandbox-beads-repo-kit`, ai-sandbox
+> `modules/beads/README.md`). The kit replaced this repository's
+> `scripts/beads-server.sh` and its three hooks with `.claude/beads/beads.sh`.
+> File names below are the pre-kit ones. The pitfalls (section 8) and the
+> identity rules (section 9) still apply.
+
 Seed document for an onboarding skill. It says what a repository needs so
 that every Claude Code session — an ephemeral cloud sandbox, a local
 machine, or a **shared sandbox** whose beads server is managed elsewhere —

@@ -11,27 +11,10 @@
 # no-op, so re-runs (resume/clear/compact) are cheap.
 set -uo pipefail
 
-# Beads (the task graph, ai/roadmap.md): bd in server mode against a local
-# dolt sql-server, synced with DoltHub every minute (ai/beads-dolthub.md).
-# Runs on every machine, before the remote-only toolchain step: `setup`
-# first detects a shared sandbox (whose server is managed elsewhere) or a
-# foreign bd/dolt, and then sets up nothing. Non-fatal: a beads failure
-# never breaks session start, but it is printed loudly.
 REPO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-if [ -f "${REPO_DIR}/scripts/beads-server.sh" ]; then
-  if bash "${REPO_DIR}/scripts/beads-server.sh" setup; then
-    # A shared sandbox serves on 127.0.1.1; hand that to the agent's shell.
-    if [ -d "$HOME/.local/state/ai-sandbox" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-      echo 'export BEADS_DOLT_SERVER_HOST=127.0.1.1' >> "$CLAUDE_ENV_FILE"
-    fi
-    # Not `bd prime`: its generic "session close protocol" text conflicts
-    # with this repo's done-contract. One status line + the ready queue.
-    ( cd "${REPO_DIR}" && bash scripts/beads-server.sh status && bd ready 2>/dev/null | head -20 ) || true
-  else
-    echo "session-start: beads setup FAILED — no task graph this session (message above)." >&2
-    bash "${REPO_DIR}/scripts/beads-server.sh" status >&2 || true
-  fi
-fi
+
+# Beads (the task graph) is set up by its own SessionStart hook, .claude/beads/beads.sh
+# session-start (the ai-sandbox repo kit; see .claude/skills/beads/SKILL.md).
 
 # Only touch the ephemeral remote sandbox; local dev machines manage their
 # own toolchain (avoid writing to a developer's /usr/local/bin).
