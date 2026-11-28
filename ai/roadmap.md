@@ -48,6 +48,7 @@ Consequences:
 | 2 | Replan: this file, a short handoff, beads seeded, hooks | PR #263 merged; `bd ready` shows step 3 | Fable |
 | 3 | **Feature complete**: clean build #6, every classed defect fixed and minimally tested, the three testability gaps documented | Definition below met, evidence by run ID; last act: Claude's fresh build on a new account (kp-2al.48) | Opus, beads |
 | 3.1 | **Version currency and pinning** (owner, 2026-11-27): every pinned component to current stable, one major version at a time; pin everything unpinned; Keycloak on the official image | Epic `kp-uvy` met; a shake-out build green | planned at its gate (`kp-uvy.1`) |
+| 3.2 | **Single sign-on for the platform UIs** (owner, 2026-11-28): Argo CD and Grafana log in through Keycloak (federated to Cognito); more owner items to be added after 3.1 | Epic `kp-sk6` met | planned at its gate (`kp-sk6.1`) |
 | 4 | Admin and tenant documentation of the design **as it is**, gaps named honestly | Docs site pages `stable` | beads-assigned models |
 | 5 | Pass-1 end-to-end tests in a hold-out repo (admin, tenant, end-user), run from an EC2 instance inside the VPC; fix what they find | Suite green against a clean build, with v2.0 gaps as expected findings | beads-assigned models |
 | 6 | **Cleanup**: known non-blocking issues, CI and static hygiene, non-internet-exploitable security hygiene; re-evaluate the v2.0 bucket, decide on a v1.1 | Bucket triaged; v1.1 decided | owner + models |
@@ -60,7 +61,9 @@ refactoring cheap. Retrospectives stay unharvested until the owner asks.
 
 **Steps are planned one at a time.** Only step 3 is planned in detail.
 Step 3.1 (inserted 2026-11-27) runs after step 3 closes and before
-step 4; it does not block closing step 3.
+step 4; it does not block closing step 3. Step 3.2 (inserted 2026-11-28)
+follows 3.1 — the versions are pinned and tested before SSO is added — and
+precedes step 4.
 Each later step opens with a collaborative planning session with the
 owner (a `gate` bead every child depends on); the beads under steps 4 to
 7 today are sketches labelled `sketch` and are not the plan.

@@ -28,7 +28,7 @@ the platform's own behavioural suite (Live verify) passed every check:
 
 What comes next is in [`ai/roadmap.md`](ai/roadmap.md): step 3 (feature
 complete) is done; step 3.1 brings every component to its current release and
-pins every dependency.
+pins every dependency; step 3.2 adds single sign-on to Argo CD and Grafana.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ GitHub repository  ──(GitOps)──►  Management cluster  (EKS, built by T
   TLS 1.2 and 1.3 only.
 - **Identity:** Keycloak on the platform cluster federates to an Amazon
   Cognito user pool, and EKS trusts Keycloak, so `kubectl` users sign in with
-  a directory account. Argo CD and Grafana SSO are planned.
+  a directory account. Argo CD and Grafana SSO are planned for step 3.2.
 - **Secrets** live in AWS Secrets Manager and reach clusters through External
   Secrets; IAM roles for service accounts everywhere, no static credentials
   in any manifest.
