@@ -66,6 +66,14 @@ field is deprecated in 1.3.4):
 {"database":"dolt","backend":"dolt","dolt_mode":"server","dolt_database":"<database>","project_id":"<uuid>"}
 ```
 
+Commit it byte-identical to what `bd bootstrap` writes: indented JSON with
+**no trailing newline**. `bd bootstrap` (1.3.4) rewrites this file, and the
+setup script runs it whenever the local database is missing, which in a
+cloud sandbox is every session. If the committed copy ends in a newline,
+every session starts with a one-byte diff that the uncommitted-changes stop
+hook flags. The easiest way to get the exact bytes is to copy the file from
+a bd run rather than hand-writing it (see 6.1).
+
 `.beads/config.yaml` — at least:
 
 ```yaml
@@ -213,3 +221,4 @@ fields (`revision`) and rekeyed comment IDs to differ.
 | Push/pull uses the wrong DoltHub identity | Push/pull run inside the server process | Import the key for the user that runs the server |
 | Dolt remote silently becomes GitHub | bd adopts git origin when no remote is set | `BD_NO_REMOTE_ADOPT=1` |
 | Old bd refuses the database | bd refuses databases migrated by a newer bd | One pin for every clone; status line checks it |
+| Every session starts with `.beads/metadata.json` modified (only the final newline differs) | `bd bootstrap` rewrites the file without a trailing newline; the setup script bootstraps in every fresh sandbox | Commit the file without a trailing newline (section 4). Steady-state `bd status`/`ready`/`sync` leave it alone |
