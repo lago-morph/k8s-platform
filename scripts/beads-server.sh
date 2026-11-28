@@ -347,6 +347,21 @@ cmd_setup() {
         command -v bd >/dev/null 2>&1 || die "shared sandbox but no bd on PATH — not installing one"
         echo "$PORT" >"$ROOT/.beads/dolt-server.port"
         say "shared sandbox: using the server at $SHARED_HOST:$PORT; it syncs itself"
+        # The database is part of this repo: if the shared server does not
+        # hold it yet, clone it there from sync.remote. The clone runs inside
+        # the shared server, with that server's DoltHub credentials; if it
+        # has none, bd's error is shown and setup fails.
+        if ! (cd "$ROOT" && bd status --json) >/dev/null 2>&1; then
+            local out
+            say "database $(db_name) not on the shared server — cloning it with bd bootstrap"
+            if ! out=$(cd "$ROOT" && bd bootstrap --yes 2>&1); then
+                printf '%s\n' "$out" | tail -n 20 | sed 's/^/beads-server:   /' >&2
+                die "bd bootstrap into the shared server FAILED (output above)"
+            fi
+            (cd "$ROOT" && bd status --json) >/dev/null 2>&1 ||
+                die "bd still cannot read $(db_name) on the shared server after bootstrap"
+            say "database $(db_name) cloned into the shared server"
+        fi
         return 0
     fi
     if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then

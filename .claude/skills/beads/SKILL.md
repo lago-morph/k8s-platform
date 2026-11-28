@@ -31,8 +31,10 @@ working set blocks the code push. You never run `bd dolt push` or `bd sync`
 by hand, and never `bd compact` / `bd flatten` (events are machine-local).
 
 On a **shared sandbox** (`~/.local/state/ai-sandbox` exists) the server at
-127.0.1.1:3307 is managed outside this repo: setup only points bd at it
-and installs, starts and syncs nothing. If bd or dolt processes it did not
+127.0.1.1:3307 is managed outside this repo: setup points bd at it, clones
+this repo's database into it with `bd bootstrap` if it is missing, and
+installs, starts and syncs nothing. A failed clone (for example, no DoltHub
+key on that server) is printed and setup exits non-zero. If bd or dolt processes it did not
 start are running on an ordinary machine, setup sets up nothing and says so.
 
 ## If the status line says `beads: UNAVAILABLE`
