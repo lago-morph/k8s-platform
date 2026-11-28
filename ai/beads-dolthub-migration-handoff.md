@@ -143,6 +143,7 @@ These variables are for bd 1.3.4 only. Strip all three from every bd 1.2.2 comma
 
 ### 3.0 Prepare
 
+0. **Shared-sandbox check, before anything else.** If `~/.local/state/ai-sandbox` exists, this machine is a shared sandbox with its own beads server, and the migration must not run here. Do not install bd or dolt, do not start a server, do not sync. Report to the owner and stop. The cloud sandbox used for this migration has no such directory (checked 2026-11-28).
 1. **Baseline.** `git ls-remote origin refs/heads/beads-dolt-data` must equal `b08e137…`; if not, stop. `bd version` must be 1.2.2, and `bd list --all -n 0 --json` must return 175 records.
 2. **Tools.**
    - Download `https://github.com/dolthub/dolt/releases/download/v2.7.7/dolt-linux-amd64.tar.gz` to `/tmp/dolt277`, check it against the SHA-256 in Part 2, and unpack it there.
@@ -307,6 +308,22 @@ None of this was tested in the research session. It is the design for one PR, op
 
 **New `scripts/beads-server.sh`.** Subcommands, each idempotent:
 
+0. **`detect`**. Runs first, before every other subcommand. It decides whether this machine is a **shared sandbox**, whose beads server is managed outside this repository and must never be duplicated.
+
+   **Owner rule: never start a bd or dolt server when one is already running on the machine.**
+
+   - Marker: the directory `~/.local/state/ai-sandbox` exists. Its sync log is `~/.local/state/ai-sandbox/beads-sync.log`, and its state file is `~/.local/state/ai-sandbox/beads-sync.state`.
+   - If the marker is **absent**, this is an ordinary cloud sandbox: run `install`, `creds`, `start` and `sync-loop` below.
+   - If the marker is **present**:
+     - **Healthy:** a server answers at **127.0.1.1:3307**, user `root`, no password (for example `dolt --host 127.0.1.1 --port 3307 --no-tls -u root -p "" sql -q "SELECT 1"`), **and** `beads-sync.state` contains no record matching `beads-sync-HALTED`. Use that server:
+       - Point bd at it with `BEADS_DOLT_SERVER_HOST=127.0.1.1` and `.beads/dolt-server.port` = `3307`.
+       - Run **none** of `install`, `creds`, `start` or `sync-loop`. The shared sandbox does its own syncing, logged in `beads-sync.log`.
+       - Use the `bd` already on that machine. If it is missing, do not install one: report it.
+     - **Any other combination** (no server answering, a `beads-sync-HALTED` record, or both), the shared configuration is broken:
+       - Install nothing, start nothing, sync nothing.
+       - Print a loud message naming which check failed and pointing at `beads-sync.log`.
+       - Exit non-zero, so the session-start hook and the status line tell the user something is wrong. Do not try to repair it.
+   - The host is `127.0.1.1`, not `127.0.0.1`, as the owner specified.
 1. **`install`**:
    - `npm install -g @beads/bd@$BD_VERSION` unless `bd version` already matches.
    - Download dolt `$DOLT_VERSION` from `https://github.com/dolthub/dolt/releases/download/v$DOLT_VERSION/dolt-linux-amd64.tar.gz`, refuse it unless `sha256sum` equals `$DOLT_SHA256`, and install `bin/dolt` to `/usr/local/bin/dolt`.
@@ -330,10 +347,10 @@ None of this was tested in the research session. It is the design for one PR, op
      - 3: transient, retry next tick
      - 4: stuck working set
    - On 2 or 4 the loop keeps running, but status must show it loudly. Never auto-resolve.
-5. **`status`**: one line, `beads: ready=N in_progress=N last-sync=<code> <age>`, from `bd status --json` and the status file. Flag a last sync older than 3 min, or code 1, 2 or 4.
+5. **`status`**: one line, `beads: ready=N in_progress=N last-sync=<code> <age>`, from `bd status --json` and the status file. Flag a last sync older than 3 min, or code 1, 2 or 4. On a shared sandbox, read the last result from `beads-sync.state` instead, and flag `beads-sync-HALTED`.
 
 **Hooks after the PR:**
-- `session-start.sh`: when `CLAUDE_CODE_REMOTE=true`, run `install`. Then always run `creds`, `start` and `sync-loop`, each with output redirected, then `status` and `bd ready | head -20`. A failure prints loudly but never fails session start.
+- `session-start.sh`: run `detect` first. If it reports a healthy shared sandbox, skip straight to `status` and `bd ready | head -20`. If it reports a broken one, print its message and stop the beads part of start-up. Otherwise, when `CLAUDE_CODE_REMOTE=true` run `install`, then always run `creds`, `start` and `sync-loop`, each with output redirected, then `status` and `bd ready | head -20`. A failure prints loudly but never fails session start.
 - `UserPromptSubmit`: `beads-status.sh` runs `scripts/beads-server.sh status`. It is read-only and runs no sync.
 - No Stop, PreCompact, SessionEnd or PreToolUse beads hooks. Loss window: up to one minute of beads writes if the container is reclaimed.
 
@@ -341,6 +358,7 @@ None of this was tested in the research session. It is the design for one PR, op
 - `bash -n` and shellcheck on the new script.
 - `BD_VERSION`, `DOLT_VERSION` and `DOLT_SHA256` read from `versions.env`, not hardcoded.
 - The PID-file guard makes a second `sync-loop` a no-op (stub `bd`).
+- `detect`, with a fake `HOME`: marker absent leads to the normal path. Marker plus a reachable stub server and no HALTED record leads to the shared path, and `install`, `start` and `sync-loop` are never called. Marker with no server, with a HALTED record, or with both leads to a non-zero exit with nothing installed or started.
 - `creds` never prints the variable (stub `dolt`).
 - No tracked file except archives still references `beads-sync.sh`, `beads-dolt-data` or `embeddeddolt`.
 
