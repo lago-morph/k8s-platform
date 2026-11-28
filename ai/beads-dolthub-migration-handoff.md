@@ -390,3 +390,44 @@ None of this was tested in the research session. It is the design for one PR, op
 - **`dolt.auto-push`** (bd config) is not a timer: it pushes after write commands, at most once per interval (v1.3.4 `docs/reference/configuration.md:244-263`). The `bd sync` loop covers it, so leave auto-push off.
 - **Background process survival.** Claude Code documents starting background processes from SessionStart with redirected output. It does not document their lifetime, so verify on the first session after the PR that the server and the loop are still alive several turns later.
 - **Sessions without the secret** (or without DoltHub in the network policy) have no task graph. The hook must say so on every prompt rather than fail silently.
+
+---
+
+## Part 6 — What happened when Part 3 ran (2026-11-28, migration session)
+
+Outcome: **migration complete.** DoltHub `jmanton/k8s-platform` holds the
+graph with full history; the Part 5 clean-up shipped as one PR, with two
+changes to the design (below). The `beads-dolt-data` branch is untouched at
+`b08e137…`.
+
+| Step | Result |
+|---|---|
+| 3.0 | Passed: no marker, no bd/dolt processes, branch at `b08e137…`, bd 1.2.2, 175 records. dolt tarball hash matched. `dolt creds check` succeeded |
+| 3.1 | Passed. `backup status` printed "Database size: 0 B" although ~19 MB was written; the restore used it fine (cosmetic) |
+| 3.2 | **Clone of the empty DoltHub database failed** ("contains no Dolt data"). Took the documented fallback: server on an empty data dir, init creates the database. Reset check ran after 3.3: passed |
+| 3.3 | Passed: `dolt_mode: server`, `dolt_database: k8s-platform`, no `dolt_server_port`, no stray `kp` database, `.beads/dolt/` empty |
+| 3.4 | Restore passed (`project_id` restored, 631 commits of history). No remote existed, so `migrate schema` ran **without** `--force`; v66. `recompute-blocked`: already consistent. `origin` added afterwards with `bd dolt remote add` (this also sets `sync.remote`) |
+| 3.5 | Passed. Every bead compared with both binaries: 175 issues, 362 deps, 85 comments (author/text/`created_at`), 372 labels, `updated_at` unchanged. Only difference: new field `revision`. R2 comparison skipped (no R2 access in that session; owner confirmed the export was verified earlier) |
+| 3.6 | `bd dolt push` succeeded |
+| 3.7 | See below. After the fix: passed, identical to 3.5; `events` empty, as expected |
+
+### Findings that changed the design
+
+1. **A plain `dolt clone` gives a database bd cannot open.** bd's
+   machine-local tables (`leases`, `events`, `wisps`, `local_metadata`,
+   `repo_mtimes`, `bd_events_journal`, `bd_events_seq`,
+   `ignored_schema_migrations`) are in `dolt_ignore`, so the clone lacks
+   them: every bd command failed with `table not found: leases`, and a
+   server restart did not help. **`bd bootstrap --yes`** (server running on
+   an empty data dir, `sync.remote` set) clones through the server *and*
+   creates those tables. Steps 3.2 and 3.7 and the Part 5 `start` step
+   therefore use `bd bootstrap`, never `dolt clone`.
+2. **Launch the server directly.** `cd $M && nohup dolt sql-server … &`
+   backgrounds a subshell, so `$!` was not the server's PID and the first
+   stop in 3.7 never reached it; the restarted server then failed with
+   "Port 3307 already in use". `scripts/beads-server.sh` launches dolt
+   directly and its test checks the PID file names the server itself.
+
+Owner decisions taken: keep a pre-`git push` `bd sync` (it blocks the push
+on exit 1, 2 or 4); record this outcome here. Onboarding notes for other
+repositories: `ai/beads-server-mode-onboarding.md`.
