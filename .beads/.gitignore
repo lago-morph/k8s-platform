@@ -84,5 +84,5 @@ bd.db
 # session interaction log — never tracked
 interactions.jsonl
 
-# scripts/beads-server.sh background-sync result (exit code + timestamp)
+# .claude/beads/beads.sh background-sync result (exit code + timestamp)
 sync-loop.status

@@ -9,10 +9,33 @@
       "mcp__Claude_Code_Remote",
       "mcp__Jentic",
       "mcp__github"
+    ],
+    "deny": [
+      "Bash(bd init:*)",
+      "Bash(bd bootstrap:*)",
+      "Bash(bd sync:*)",
+      "Bash(bd dolt start:*)",
+      "Bash(bd dolt stop:*)",
+      "Bash(bd dolt killall:*)",
+      "Bash(bd dolt push:*)",
+      "Bash(bd dolt pull:*)",
+      "Bash(bd doctor --fix:*)",
+      "Bash(bd migrate:*)",
+      "Bash(dolt sql-server:*)",
+      "Bash(dolt clone:*)"
     ]
   },
   "hooks": {
     "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/beads/beads.sh\" session-start",
+            "timeout": 600
+          }
+        ]
+      },
       {
         "hooks": [
           {
@@ -37,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/beads-prepush-guard.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/beads/beads.sh\" prepush-hook"
           }
         ]
       }
@@ -57,7 +80,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/beads-status.sh\""
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/beads/beads.sh\" status"
           }
         ]
       }

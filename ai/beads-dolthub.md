@@ -1,8 +1,12 @@
 # Beads on DoltHub — how the task graph is stored and synced
 
 Since 2026-11-28 the beads graph (prefix `kp`) lives in a private DoltHub
-database. Each session runs bd 1.3.4 in **server mode** against a local
-`dolt sql-server` and syncs with DoltHub every minute. The previous
+database. Each session runs bd 1.3.4 in **server mode**: on an ai-sandbox
+host against the host's shared `dolt sql-server` (which ai-sandbox syncs),
+anywhere else against a local one the session starts and syncs every
+minute. The wiring is ai-sandbox's **repo kit** (`.claude/beads/`, written by
+`ai-sandbox-beads-repo-kit`; its design is in ai-sandbox's
+`modules/beads/README.md`, "The repo kit"). The previous
 embedded/git-branch setup is archived in
 `docs/archive/beads-dolt-git-remotes.md`; the migration record is
 `ai/beads-dolthub-migration-handoff.md`.
@@ -11,56 +15,58 @@ embedded/git-branch setup is archived in
 
 | Item | Where | Tracked? |
 |---|---|---|
-| Issue data | DoltHub `<owner>/k8s-platform`; local copy in `/home/user/.beads-dolt/k8s-platform` | No (data dir is outside the repo) |
+| Issue data | DoltHub `<owner>/k8s-platform`; local copy on the ai-sandbox host's server, or in a cloud sandbox in `~/.beads-dolt/k8s-platform` | No (outside the repo) |
 | Remote URL | `.beads/config.yaml` `sync.remote` | Yes |
 | Database name, project ID, server mode | `.beads/metadata.json` (no host, port or user) | Yes |
-| Port | `.beads/dolt-server.port` (`3307`), written at start | No |
 | Last background sync | `.beads/sync-loop.status` (`<exit code> <epoch>`) | No |
-| Pins | `versions.env`: `BD_VERSION`, `DOLT_VERSION`, `DOLT_SHA256` | Yes |
+| Pins | `.claude/beads/versions.env` (from ai-sandbox's `versions.toml`; refresh with the kit, never edit) | Yes |
 | DoltHub key | env `DOLTHUB_CREDS_JWK` (cloud environment secret) → `dolt creds import` | Never |
 | bd behaviour switches | `.claude/settings.json` `env`: `BEADS_DOLT_SERVER_MODE=1`, `BEADS_DOLT_AUTO_START=0`, `BD_NO_REMOTE_ADOPT=1` | Yes |
 
 `BD_NO_REMOTE_ADOPT=1` is required: without it `bd sync` / `bd dolt push`
 adopt the git origin (GitHub) as the Dolt remote when none is configured.
 
-## Session lifecycle (`scripts/beads-server.sh`)
+## Session lifecycle (`.claude/beads/beads.sh`)
 
 ```mermaid
 flowchart LR
   A[SessionStart] --> B{detect}
-  B -- normal --> C[install · creds · start · sync-loop]
-  B -- shared --> D[use 127.0.1.1:3307]
-  B -- foreign / broken --> E[set up nothing, say why]
+  B -- local --> C[install · creds · start · sync-loop]
+  B -- host --> D[host's server at 127.0.1.1:3307<br/>clone db there if missing]
+  B -- foreign bd/dolt --> E[set up nothing, say why]
   C --> F[status + bd ready]
   D --> F
 ```
 
-- **detect** — decision table in `ai/beads-dolthub-migration-handoff.md`
-  §5.2. In short: with no `~/.local/state/ai-sandbox` marker and no foreign
-  `dolt`/persistent `bd` process it is the normal path; with the marker it
-  uses the shared server at **127.0.1.1**:3307 if it answers and
-  `beads-sync.state` has no `beads-sync-HALTED`, and clones the database
-  into it with `bd bootstrap` if it is not there yet (the database is part
-  of this repo; a clone error, e.g. no DoltHub key on that server, fails
-  setup loudly); anything else sets up nothing and exits non-zero. Processes in the script's own PID files (and
-  their children) are not foreign.
+- **detect** — `host` when `ai-sandbox-beads-status` is installed (an
+  ai-sandbox host); otherwise `local`, unless `dolt` or a persistent `bd`
+  that the script didn't start is running, in which case nothing is set up.
+- **host** — never installs, starts or syncs anything. Fails loudly if the
+  host's server is stopped on purpose (only the owner restarts it). If the
+  server lacks the database, `ai-sandbox-beads-clone` fetches it from
+  DoltHub (bootstrap, then `dolthub` as its only remote, under the host
+  sync's lock). Also sets `.beads` to 0700 and `git config beads.role
+  maintainer` in the clone.
 - **install** (cloud sessions only) — `npm install -g @beads/bd@$BD_VERSION`;
   dolt from the GitHub release tarball, refused unless its SHA-256 matches.
 - **creds** — dolt `user.name`/`user.email` from git config,
-  `metrics.disabled`, then imports the key from stdin unless
-  `dolt creds check` already passes. Never prints the variable.
-- **start** — `dolt sql-server --data-dir /home/user/.beads-dolt` on
-  127.0.0.1:3307 (PID in `server.pid`, launched directly so `$!` is the
-  server). If the database directory is missing, **`bd bootstrap --yes`**
-  clones it from `sync.remote` through the server.
+  `metrics.disabled`, then imports the key (`DOLTHUB_CREDS_JWK`) from stdin
+  unless `dolt creds check` already passes. Never prints it.
+- **start** — `dolt sql-server --data-dir ~/.beads-dolt` on 127.0.0.1:3307
+  (launched directly so `$!` is the server). If the database directory is
+  missing, **`bd bootstrap --yes`** clones it from `sync.remote`.
 - **sync-loop** — PID-guarded background loop: `bd sync` every 60 s,
   result to `.beads/sync-loop.status`. Exit codes: 0 synced, 1 error,
   2 merge conflict (nothing pushed), 3 transient, 4 stuck working set.
   Never auto-resolves.
-- **status** — the per-prompt line; flags codes 1/2/4, a sync older than
-  3 min, a bd that is not the pin, or no server/key (`UNAVAILABLE`).
-- **sync-now** — one `bd sync`; the pre-`git push` hook runs it and blocks
-  the push on 1/2/4.
+- **status** — the per-prompt line. Host: `host-sync ok <age>`, or
+  STOPPED ON PURPOSE. Cloud: flags codes 1/2/4, a sync older than 3 min, a
+  bd that is not the pin, or no server/key (`UNAVAILABLE`).
+- **prepush-hook** — before a `git push` in a cloud sandbox, one `bd sync`;
+  blocks the push on 1/2/4. Does nothing on a host (the host syncs).
+
+Switching between the host and a cloud sandbox: one place writes at a
+time; before switching, the last sync must be newer than the last write.
 
 Loss window: up to one minute of beads writes if the container is
 reclaimed between syncs and no `git push` happened.
