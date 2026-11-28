@@ -4,7 +4,8 @@ Written 2026-11-28 at the end of the research session. Plain-language
 summary: the beads task graph (prefix `kp`) moves off the git branch
 `beads-dolt-data` and onto a private DoltHub database. The migration runs in
 one cloud session with bd 1.3.4 and dolt 2.7.7 installed under `/tmp` (never
-on `PATH`), against a **copy** of the data. Nothing in the repository's
+on `PATH`), using bd's documented embedded→server route (backup with 1.2.2,
+`bd init --server` and restore with 1.3.4). Nothing in the repository's
 `.beads/` is touched until the owner approves the clean-up PR at the very end.
 
 Rollback at every step: the R2 backups (Part 4) and the untouched
@@ -60,7 +61,7 @@ DoltHub's web API.
 ### 1.4 Create the DoltHub database
 
 - Name: **`k8s-platform`** (lowercase, hyphen). If you choose a different name,
-  tell the agent; it only changes the URL in steps 3.10 and 3.12.
+  tell the agent; it only changes `$URL` in Part 3.
 - Visibility: **private**. Leave it **empty**: no README or initial data.
 - URL used by the agent: `https://doltremoteapi.dolthub.com/$DOLTHUB_OWNER/k8s-platform`.
 
@@ -97,13 +98,21 @@ Start it on the branch that contains this file, and point the agent at
 | Server-mode consent: with **no** Dolt remote, `bd migrate schema` is the consent; with any remote it needs `--force` | v1.3.4 `schema/remote_migrate_gate.go:1100-1158` |
 | Server-mode push/pull run as `CALL DOLT_PUSH/PULL` inside the server when the workspace has no local `.beads/dolt/kp/.dolt`, so they use the **server process's** dolt credentials (`DOLT_ROOT_PATH`) | v1.3.4 `storage/dolt/store.go:3900-3913, 4253-4350` |
 | The workspace is treated as an external server when `metadata.json` has `dolt_server_port` (or `BEADS_DOLT_SERVER_MODE=1`) | v1.3.4 `doltserver/servermode.go` |
-| bd's documented embedded→server route is `bd backup` + `bd init --server` + `bd backup restore` (v1.3.4 `docs/architecture/dolt.md:335-358`). This plan copies the Dolt directory instead, to keep Dolt history (owner chose option A). The documented route is the fallback | — |
+| **Route: bd's documented embedded→server migration**: `bd backup` (1.2.2) → `bd init --server` (1.3.4) → `bd backup restore --force` (1.3.4). It preserves full Dolt commit history | v1.3.4 `docs/architecture/dolt.md:293-358` |
+| "Make a backup" in 1.2.2 is two commands: `bd backup init <dir>` (sets the destination) then `bd backup sync` (writes it). Bare `bd backup` prints help and exits 0. `sync` first commits any pending changes (`bd: pre-backup commit`) | v1.2.2 `cmd/bd/backup_dolt.go:73-96, 136-161`; v1.3.4 `docs/getting-started/upgrading.md:167-174` |
+| 1.3.4 `bd backup restore` accepts only a local directory (no URL), runs `CALL DOLT_BACKUP('restore','--force',<file url>,'kp')` on the server, then copies the restored `_project_id` into `metadata.json`. bd and the server must both read the backup at the same absolute path | v1.3.4 `versioncontrolops/backup.go:37-48, 107-124`; `cmd/bd/backup_restore.go:105-120` |
+| The restore does **not** migrate. The v53 → v66 migration runs only with explicit consent afterwards: `bd migrate schema`, plus `--force` if the database has any Dolt remote | v1.3.4 `schema/remote_migrate_gate.go:857-872, 1100-1158` |
+| `bd init --server` needs `BEADS_DIR` set when run outside a git repo (otherwise it runs `git init`). It writes a new `project_id`, which the restore then replaces | v1.3.4 `cmd/bd/init.go:1128-1139, 160, 1682` |
 
-Not verified, so watch for these: authenticated push to DoltHub; whether DoltHub's
-"empty" database already has a commit (if a push is rejected as
-non-fast-forward, stop and report — do not force-push without the owner);
-`bd bootstrap` against a DoltHub URL end to end; dolt 2.7.7 behaviour under
-bd beyond the step 3.6 check.
+Not verified, so watch for these:
+- authenticated push to DoltHub
+- whether a clone of the empty DoltHub database works. If it fails, let
+  `bd init --server` create `kp` and add the DoltHub remote after the restore
+- whether `origin` survives `bd backup restore --force`. Check
+  `SELECT * FROM dolt_remotes` after the restore and re-add it if it is gone
+- a push rejected as non-fast-forward: stop and report. Do not force-push
+  without the owner
+- dolt 2.7.7 behaviour under bd beyond the step 3.5 check
 
 ---
 
@@ -111,142 +120,138 @@ bd beyond the step 3.6 check.
 
 Rules for the whole procedure:
 - Read `AGENTS.md` first. Never read `retrospective/`.
-- **Never put bd 1.3.4 or dolt on `PATH`, and never run them inside the repository.** The 1.2.2 hooks
-  still run every turn against the repo's `.beads/`, and bd finds its
-  workspace by walking up from the current directory.
+- **Never put bd 1.3.4 or dolt on `PATH`, and never run them inside the repository.** The 1.2.2 hooks still run every turn against the repo's `.beads/`. bd finds its workspace from `BEADS_DIR` or by walking up from the current directory, so run everything from `/tmp`.
 - Never print `DOLTHUB_CREDS_JWK`.
 - Any unexpected result: stop and report to the owner. Do not improvise.
 
-Shell setup used by every step (re-export in each Bash call):
+Variables used below (re-export in each Bash call):
 
 ```bash
 export M=/tmp/migr
 export DOLT=/tmp/dolt277/dolt-linux-amd64/bin/dolt
-export BD=/tmp/bd134bin/node_modules/.bin/bd
-export DOLT_ROOT_PATH=$M/doltroot          # dolt global config + creds
-export BEADS_DIR=$M/ws/.beads              # bd 1.3.4 workspace (outside git)
-export BEADS_DOLT_AUTO_START=0 BEADS_DOLT_SERVER_MODE=1 BD_NO_REMOTE_ADOPT=1
+export BD134=/tmp/bd134bin/node_modules/.bin/bd     # bd 1.3.4; plain `bd` on PATH is 1.2.2
+export DOLT_ROOT_PATH=$M/doltroot                   # dolt global config + DoltHub key
 export URL="https://doltremoteapi.dolthub.com/$DOLTHUB_OWNER/k8s-platform"
 ```
 
-**3.1 Baseline checks.**
-- `git ls-remote origin refs/heads/beads-dolt-data` must equal `b08e137…`. If
-  it differs, stop: someone wrote beads since the backup.
-- `bd version` (on `PATH`) must be 1.2.2, and `bd list --all -n 0 --json` must return 175 records.
+### 3.0 Prepare
 
-**3.2 Install the tools.**
-- Download `https://github.com/dolthub/dolt/releases/download/v2.7.7/dolt-linux-amd64.tar.gz`
-  to `/tmp/dolt277` and check it against the SHA-256 in Part 2. Unpack it there.
-- Run `npm install --prefix /tmp/bd134bin --no-save @beads/bd@1.3.4`.
-- Confirm `$DOLT version` and `$BD version`, and that `which -a bd` shows only the 1.2.2 binary.
+1. **Baseline.** `git ls-remote origin refs/heads/beads-dolt-data` must equal `b08e137…`; if not, stop. `bd version` must be 1.2.2, and `bd list --all -n 0 --json` must return 175 records.
+2. **Tools.**
+   - Download `https://github.com/dolthub/dolt/releases/download/v2.7.7/dolt-linux-amd64.tar.gz` to `/tmp/dolt277`, check it against the SHA-256 in Part 2, and unpack it there.
+   - Run `npm install --prefix /tmp/bd134bin --no-save @beads/bd@1.3.4`.
+   - `which -a bd` must show only the 1.2.2 binary.
+3. **Dolt identity and DoltHub key.**
+   ```bash
+   mkdir -p $DOLT_ROOT_PATH
+   $DOLT config --global --add user.name "<owner name>"
+   $DOLT config --global --add user.email "<owner email>"
+   $DOLT config --global --add metrics.disabled true
+   printf '%s' "$DOLTHUB_CREDS_JWK" | $DOLT creds import --no-profile
+   $DOLT creds ls && $DOLT creds check
+   ```
 
-**3.3 Dolt identity and key.**
+### 3.1 Back up with bd 1.2.2
+
+Run this on a copy of the workspace, so no 1.2.2 write can reach the repo's database (and from there, the hooks' push).
 
 ```bash
-mkdir -p $DOLT_ROOT_PATH
-$DOLT config --global --add user.name "<owner name>"
-$DOLT config --global --add user.email "<owner email>"
-$DOLT config --global --add metrics.disabled true
-printf '%s' "$DOLTHUB_CREDS_JWK" | $DOLT creds import --no-profile
-$DOLT creds ls && $DOLT creds check
+mkdir -p $M/old && cp -a /home/user/k8s-platform/.beads $M/old/.beads
+cd $M/old/.beads/embeddeddolt/kp && $DOLT remote remove origin && $DOLT remote -v   # must print nothing
+cd /tmp
+BEADS_DIR=$M/old/.beads bd backup init $M/kp-backup
+BEADS_DIR=$M/old/.beads bd backup sync
+BEADS_DIR=$M/old/.beads bd backup status
 ```
 
-**3.4 Copy the data, then cut the GitHub remote first.**
+Removing `origin` from the copy is a safety step. That remote is the GitHub branch `beads-dolt-data`, and the proxy allows force-pushes to it. On a copy in the research session, dolt 2.7.7's `remote remove` left:
+- no remotes in `dolt_remotes`
+- `"remotes": {}` in `repo_state.json`
+- only `main` in `dolt branch -a`
+- a clean `dolt status`
+
+### 3.2 Start the 1.3.4 server, pointed at the synced DoltHub database
 
 ```bash
-mkdir -p $M/server-data && cp -a /home/user/k8s-platform/.beads/embeddeddolt/kp $M/server-data/kp
-cd $M/server-data/kp && $DOLT remote remove origin && $DOLT remote -v   # must print nothing
-tar -czf $M/kp-v53-precopy.tar.gz -C $M/server-data kp
-```
-
-Verified on a copy in the research session with dolt 2.7.7: after the remove,
-- `dolt remote -v` prints nothing
-- `SELECT * FROM dolt_remotes` returns no rows
-- `.dolt/repo_state.json` has `"remotes": {}`
-- `dolt branch -a` shows only `main`, because `remotes/origin/main` goes too
-- `dolt status` is clean
-
-Check all five before going on.
-
-**3.5 Start the server.**
-
-```bash
+mkdir -p $M/server-data && cd $M/server-data && $DOLT clone "$URL" kp   # the empty DoltHub database, locally named kp
 cd $M && nohup $DOLT sql-server --data-dir $M/server-data --host 127.0.0.1 --port 3307 > $M/server.log 2>&1 &
 ```
 
-**3.6 dolt 2.7.7 reset check** (from v1.3.4 `docs/architecture/dolt.md:88-104`).
-Run these against the running server, from `$M/server-data/kp`:
-- `SELECT * FROM dolt_status` must return no rows.
-- `SELECT 1` must succeed.
-- `CALL DOLT_RESET('--hard')` must succeed. `Error 1105 … context canceled` means the database is affected: stop and report.
+Run the reset check from v1.3.4 `docs/architecture/dolt.md:88-104` against `kp`:
+- `SELECT * FROM dolt_status` returns no rows.
+- `SELECT 1` succeeds.
+- `CALL DOLT_RESET('--hard')` succeeds. `Error 1105 … context canceled` means stop.
 
-**3.7 The bd 1.3.4 workspace.**
-- Create `$M/ws/.beads` with mode 700.
-- Write `metadata.json`:
+If the clone of the empty database fails, skip it, start the server on the empty data dir, and let step 3.3 create `kp`. Then add the remote in step 3.5.
 
-```json
-{"database":"dolt","backend":"dolt","dolt_mode":"server",
- "dolt_server_host":"127.0.0.1","dolt_server_port":3307,"dolt_server_user":"root",
- "dolt_database":"kp","project_id":"17da1eb8-9148-4876-8211-c350c56aa14c"}
-```
-
-- Write a `config.yaml` with **no** `sync.remote`. Do not create `$M/ws/.beads/dolt/`.
-
-**3.8 Migrate.** Run every command from `$M/ws`:
+### 3.3 `bd init --server` with bd 1.3.4
 
 ```bash
-$BD migrate --inspect --json      # expect v53 -> v66
-$BD migrate schema                # no remote, so this is the consent
-$BD recompute-blocked
+mkdir -p $M/ws && cd $M/ws
+BEADS_DIR=$M/ws/.beads BEADS_DOLT_AUTO_START=0 $BD134 init --server \
+  --server-host 127.0.0.1 --server-port 3307 --server-user root \
+  --prefix kp --non-interactive --skip-hooks --skip-agents
 ```
 
-- Check that `schema_migrations` max is 66 and that `dolt_status` is clean, committing if needed.
-- Keep `$M/server.log`.
+Confirm that `$M/ws/.beads/metadata.json` has `dolt_mode: server`, `dolt_database: kp` and `dolt_server_port: 3307`.
 
-**3.9 Compare #1** (migrated server vs the 1.2.2 repo DB vs R2 export).
+### 3.4 Restore and migrate with bd 1.3.4
+
+```bash
+cd $M/ws
+export BEADS_DIR=$M/ws/.beads BEADS_DOLT_AUTO_START=0
+$BD134 backup restore --force $M/kp-backup
+$BD134 migrate schema --force        # --force because kp has the DoltHub remote; without a remote, drop it
+$BD134 recompute-blocked
+```
+
+Then check:
+- `metadata.json` `project_id` is `17da1eb8-9148-4876-8211-c350c56aa14c`.
+- `schema_migrations` max is 66.
+- `dolt_status` is clean.
+- `SELECT * FROM dolt_remotes` shows `origin` = `$URL`. If it is missing, run `$BD134 dolt remote add origin "$URL"`.
+
+### 3.5 Compare #1
+
+This compares the migrated server against the 1.2.2 repo database and the R2 export.
 - Pull every bead individually with both binaries:
-  - 1.3.4: `$BD show --id=<id> --long --json --include-comments --include-dependents`, `$BD dep list <id> [--direction up] --json`, `$BD comments <id> --json`, `$BD label list <id> --json`.
-  - 1.2.2: the same commands with the `bd` on `PATH`, run from the repo with the 1.3.4 variables removed (`env -u BEADS_DIR -u BEADS_DOLT_SERVER_MODE -u BEADS_DOLT_AUTO_START bd …`), or `BEADS_DIR` would send them to the new workspace.
+  - 1.3.4, from `$M/ws`: `$BD134 show --id=<id> --long --json --include-comments --include-dependents`, `$BD134 dep list <id> [--direction up] --json`, `$BD134 comments <id> --json`, `$BD134 label list <id> --json`.
+  - 1.2.2: the same commands with plain `bd`, from the repo, with `BEADS_DIR` unset.
 - Compare field by field, and also against `beads-export-all-20261128T041141Z.jsonl` from R2.
 - Expected differences only:
-  - comment IDs: compare comments by author, text and `created_at` instead
+  - comment IDs (migration 0061): compare comments by author, text and `created_at`
   - fields new in 1.3.x, such as `is_blocked`
-  - `bd show` text changes
-- Counts must match: 175/362/85/372. `updated_at` must be unchanged, because 1.3.4 does not restamp.
+- Counts must match: 175 issues, 362 dependencies, 85 comments, 372 labels.
+- `updated_at` must be unchanged.
 - Anything else: stop.
 
-**3.10 Push to DoltHub.**
+### 3.6 Push to DoltHub
 
 ```bash
-$BD dolt remote add origin "$URL"     # or SQL: CALL DOLT_REMOTE('add','origin','<URL>')
-$BD dolt push
+cd $M/ws && $BD134 dolt push
 ```
 
-If the push is rejected or authentication fails, stop and report.
+If the push is rejected or authentication fails, stop and report. Then stop the server and tar `$M/server-data/kp` as an archive: it holds the 738 events locally, and those no longer push. Ask the owner before uploading that tar to R2.
 
-**3.11 Archive the migrated copy.**
-- Stop the server.
-- Tar `$M/server-data/kp`. It holds the 738 events locally, and they will not
-  come back from DoltHub.
-- Ask the owner before uploading the tar to R2 bucket `k8s-platform-beads-2026-11-27`.
+### 3.7 Delete, re-sync from DoltHub, compare #2
 
-**3.12 Delete and re-clone from DoltHub.**
-- Run `rm -rf $M/server-data/kp`, then start the server again on the empty data dir.
-- Set `sync.remote: "<URL>"` in `$M/ws/.beads/config.yaml`.
-- Run `$BD bootstrap` from `$M/ws`. It clones into `kp` via `CALL DOLT_CLONE`.
-- Fallback: `$DOLT clone "$URL" kp` inside `$M/server-data` before starting the server.
+1. Stop the server.
+2. `rm -rf $M/server-data/kp`.
+3. `cd $M/server-data && $DOLT clone "$URL" kp`.
+4. Start the server again.
+5. Repeat 3.5 against it.
+   - Expected: `events` may be empty.
+   - Everything else must match.
+   - Do not run `bd compact` or `bd flatten`.
 
-**3.13 Compare #2.** Repeat 3.9 against the re-cloned database.
-- `events` is expected to be empty (#7039). Everything else must match.
-- Do not run `bd compact` or `bd flatten`.
+### 3.8 Report and stop
 
-**3.14 Report and stop.** Report the results, evidence and any discrepancies
-to the owner. Then, **only with the owner's approval**, open one PR that:
+Report the results to the owner. **Only with the owner's approval**, open one PR that:
 - removes the beads hooks (`beads-prepush-guard.sh`, `beads-push.sh`, `beads-status.sh`, the beads block in `session-start.sh`) and their `.claude/settings.json` entries
 - removes `scripts/beads-sync.sh` and `BD_VERSION`
 - updates `AGENTS.md` and `.claude/skills/beads/`
 
-The `beads-dolt-data` and `__dolt_remote_info__` branches stay as the frozen archive.
+`beads-dolt-data` and `__dolt_remote_info__` stay as the frozen archive.
 
 ---
 
