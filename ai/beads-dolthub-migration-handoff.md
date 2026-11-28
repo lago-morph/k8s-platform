@@ -253,12 +253,7 @@ If the push is rejected or authentication fails, stop and report. Then stop the 
 
 ### 3.8 Report and stop
 
-Report the results to the owner. **Only with the owner's approval**, open one PR that:
-- removes the beads hooks (`beads-prepush-guard.sh`, `beads-push.sh`, `beads-status.sh`, the beads block in `session-start.sh`) and their `.claude/settings.json` entries
-- removes `scripts/beads-sync.sh` and `BD_VERSION`
-- updates `AGENTS.md` and `.claude/skills/beads/`
-
-`beads-dolt-data` and `__dolt_remote_info__` stay as the frozen archive.
+Report the results to the owner. **Only with the owner's approval**, open the clean-up PR described in Part 5. Leave the `$M/ws` workspace and the running server in place until it is merged, so the metadata it needs can be copied from them.
 
 ---
 
@@ -273,3 +268,85 @@ Report the results to the owner. **Only with the owner's approval**, open one PR
 The export was verified bead by bead against `bd show`, `bd comments`,
 `bd label list` and `bd dep list` in the research session: all fields,
 labels, 85 comments and 362 edges matched.
+
+---
+
+## Part 5 — Clean-up PR: strip the embedded/git-branch setup, start server mode at session start
+
+None of this was tested in the research session. It is the design for one PR, opened only after Part 3 passes and the owner approves. It follows `AGENTS.md`: tests ship with the code, one logical change per commit.
+
+### 5.1 Remove the old behaviour
+
+| What | Where | Action |
+|---|---|---|
+| Per-turn push (Stop, PreCompact, SessionEnd) | `.claude/hooks/beads-push.sh` and its three entries in `.claude/settings.json` | Delete the file and the entries |
+| Push-before-`git push` guard | `.claude/hooks/beads-prepush-guard.sh` and its `PreToolUse` `Bash` entry | Delete. Keep the `mcp__.*__execute` chainsaw-audit entry |
+| Per-prompt status via the old script | `.claude/hooks/beads-status.sh` | Rewrite to call the new script (5.2) |
+| bd 1.2.2 install + git-branch bootstrap at start | beads block in `.claude/hooks/session-start.sh` (lines 44-60) | Replace with 5.2 |
+| The git-ref sync helper | `scripts/beads-sync.sh` | Delete |
+| Its regression test | `tests/unit/test_beads_sync_shallow_bootstrap.sh` and `tests/unit/run.sh:197` | Delete both |
+| Pin | `versions.env:42-50` (`BD_VERSION="1.2.2"` + comment) | Set `BD_VERSION="1.3.4"`. Add `DOLT_VERSION="2.7.7"` and `DOLT_SHA256="087d3bca4f8cde61281bee451f6018bf52f567454f578a149339ef91f466bd92"`. Rewrite the comment |
+| Workspace identity | `.beads/metadata.json` | Replace with the migrated workspace's file: `{"database":"dolt","backend":"dolt","dolt_mode":"server","dolt_database":"k8s-platform","project_id":"17da1eb8-9148-4876-8211-c350c56aa14c"}`. No host, port or user |
+| Remote | `.beads/config.yaml` `sync.remote:` | Set it to `"https://doltremoteapi.dolthub.com/<DOLTHUB_OWNER>/k8s-platform"`. Nothing may point at GitHub any more |
+| bd-generated readme | `.beads/README.md` | Regenerate or rewrite for server mode |
+| Mechanism doc | `ai/beads-dolt-git-remotes.md` | Move to `docs/archive/` with a one-line "superseded by server mode on DoltHub, date" header. Write a short `ai/beads-dolthub.md` describing 5.2 |
+| References | `AGENTS.md:30-32`, `.claude/skills/beads/SKILL.md` (hooks section, "no beads database found" drill, shallow-clone note), `ai/environment.md:52,78` (add the DoltHub hosts, drop the "must live on a branch" line), `ai/roadmap.md:193-195`, `docs/open-issues.md:4` | Update to the new mechanism. `AGENTS.md` stays ≤150 lines. `ai/LESSONS.md` L42 is history: leave it |
+| Archive branches | `beads-dolt-data`, `__dolt_remote_info__` on GitHub | Leave as the frozen archive. Optional owner action: lock them in the GitHub UI so nothing can write to them |
+
+### 5.2 New behaviour: bd 1.3.4 in server mode, synced with DoltHub every minute
+
+**`.claude/settings.json` `env` block.** Values apply to every session and its subprocesses (Claude Code docs, env-vars page). No `~` or `$HOME` expansion.
+
+```json
+"env": { "BEADS_DOLT_SERVER_MODE": "1", "BEADS_DOLT_AUTO_START": "0", "BD_NO_REMOTE_ADOPT": "1" }
+```
+
+- `BEADS_DOLT_SERVER_MODE=1` marks the server as externally managed: bd never starts or stops one (v1.3.4 `servermode.go`).
+- `BEADS_DOLT_AUTO_START=0` is belt and braces.
+- `BD_NO_REMOTE_ADOPT=1` is required. `bd sync` and `bd dolt push` otherwise adopt the **git origin (GitHub)** as the Dolt remote when none is configured (`bd sync --help`).
+
+**New `scripts/beads-server.sh`.** Subcommands, each idempotent:
+
+1. **`install`**:
+   - `npm install -g @beads/bd@$BD_VERSION` unless `bd version` already matches.
+   - Download dolt `$DOLT_VERSION` from `https://github.com/dolthub/dolt/releases/download/v$DOLT_VERSION/dolt-linux-amd64.tar.gz`, refuse it unless `sha256sum` equals `$DOLT_SHA256`, and install `bin/dolt` to `/usr/local/bin/dolt`.
+   - Both are on `PATH` now: there is no 1.2.2 left to protect.
+2. **`creds`**:
+   - If `DOLTHUB_CREDS_JWK` is unset, fail loudly ("no DoltHub key: beads unavailable this session").
+   - Otherwise set the dolt `user.name`, `user.email` and `metrics.disabled` globals, then run `printf '%s' "$DOLTHUB_CREDS_JWK" | dolt creds import --no-profile` unless `dolt creds ls` already lists it.
+   - Never echo the variable.
+3. **`start`**:
+   - Data dir `/home/user/.beads-dolt` (absolute, outside the repo).
+   - If `k8s-platform/` is missing, run `dolt clone "<sync.remote URL>" k8s-platform` there. That is "sync from DoltHub" on a fresh container; an existing data dir is brought up to date by the first `bd sync`.
+   - If no live server answers on 127.0.0.1:3307 (PID file plus a `SELECT 1` probe), start `nohup dolt sql-server --data-dir /home/user/.beads-dolt --host 127.0.0.1 --port 3307 > /home/user/.beads-dolt/server.log 2>&1 &` and wait until `SELECT 1` succeeds.
+   - Write `3307` to `.beads/dolt-server.port`. It is gitignored, and it is the non-deprecated port source.
+4. **`sync-loop`**:
+   - If its PID file names a live process, exit. SessionStart runs again on `resume`, `clear` and `compact`, so this check prevents a second loop.
+   - Otherwise start `nohup` a loop that runs `bd sync` from the repo root every 60 s and writes the exit code and timestamp to `.beads/sync-loop.status`. Add that name to `.beads/.gitignore`.
+   - Exit codes, from `bd sync --help`:
+     - 0: synced
+     - 1: error
+     - 2: merge conflict, nothing pushed
+     - 3: transient, retry next tick
+     - 4: stuck working set
+   - On 2 or 4 the loop keeps running, but status must show it loudly. Never auto-resolve.
+5. **`status`**: one line, `beads: ready=N in_progress=N last-sync=<code> <age>`, from `bd status --json` and the status file. Flag a last sync older than 3 min, or code 1, 2 or 4.
+
+**Hooks after the PR:**
+- `session-start.sh`: when `CLAUDE_CODE_REMOTE=true`, run `install`. Then always run `creds`, `start` and `sync-loop`, each with output redirected, then `status` and `bd ready | head -20`. A failure prints loudly but never fails session start.
+- `UserPromptSubmit`: `beads-status.sh` runs `scripts/beads-server.sh status`. It is read-only and runs no sync.
+- No Stop, PreCompact, SessionEnd or PreToolUse beads hooks. Loss window: up to one minute of beads writes if the container is reclaimed.
+
+**Tests** (`tests/unit/`, registered in `run.sh`):
+- `bash -n` and shellcheck on the new script.
+- `BD_VERSION`, `DOLT_VERSION` and `DOLT_SHA256` read from `versions.env`, not hardcoded.
+- The PID-file guard makes a second `sync-loop` a no-op (stub `bd`).
+- `creds` never prints the variable (stub `dolt`).
+- No tracked file except archives still references `beads-sync.sh`, `beads-dolt-data` or `embeddeddolt`.
+
+### 5.3 Open points for the owner
+
+- **Keep a pre-`git push` `bd sync`?** It would close the one-minute window before code leaves the sandbox. It is not per-turn, but it is a hook, so it is the owner's call.
+- **`dolt.auto-push`** (bd config) is not a timer: it pushes after write commands, at most once per interval (v1.3.4 `docs/reference/configuration.md:244-263`). The `bd sync` loop covers it, so leave auto-push off.
+- **Background process survival.** Claude Code documents starting background processes from SessionStart with redirected output. It does not document their lifetime, so verify on the first session after the PR that the server and the loop are still alive several turns later.
+- **Sessions without the secret** (or without DoltHub in the network policy) have no task graph. The hook must say so on every prompt rather than fail silently.
