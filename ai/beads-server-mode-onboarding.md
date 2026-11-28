@@ -123,7 +123,7 @@ on the machine.**
 |---|---|---|---|---|
 | absent | none | — | — | Normal path: install, creds, start, sync-loop |
 | absent | running | — | — | Set up nothing; list the processes; exit non-zero |
-| present | (expected) | answers | absent | Use the shared server; install, start and sync nothing |
+| present | (expected) | answers | absent | Use the shared server; if it lacks the repo's database, `bd bootstrap` it there (fail loudly on a clone error); install, start and sync nothing |
 | present | (expected) | answers | present | Set up nothing; report broken shared config |
 | present | (expected) | no answer | either | Set up nothing; report broken shared config |
 
@@ -136,6 +136,12 @@ on the machine.**
   environment, and for the agent's shell via `$CLAUDE_ENV_FILE` in the
   SessionStart hook.
 - On a shared sandbox use the `bd` already there; if missing, report it.
+- The repo's database is part of the repo: when the shared server answers
+  but does not hold it (`bd status` fails), run `bd bootstrap --yes` against
+  it. The clone runs inside the shared server with **its** DoltHub
+  credentials; if it has none, show bd's error and exit non-zero. (The
+  first version of this design assumed the shared server already held the
+  database; it did not.)
 
 ### 5.2 Normal path
 

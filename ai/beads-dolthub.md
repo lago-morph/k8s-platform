@@ -39,8 +39,10 @@ flowchart LR
   §5.2. In short: with no `~/.local/state/ai-sandbox` marker and no foreign
   `dolt`/persistent `bd` process it is the normal path; with the marker it
   uses the shared server at **127.0.1.1**:3307 if it answers and
-  `beads-sync.state` has no `beads-sync-HALTED`; anything else sets up
-  nothing and exits non-zero. Processes in the script's own PID files (and
+  `beads-sync.state` has no `beads-sync-HALTED`, and clones the database
+  into it with `bd bootstrap` if it is not there yet (the database is part
+  of this repo; a clone error, e.g. no DoltHub key on that server, fails
+  setup loudly); anything else sets up nothing and exits non-zero. Processes in the script's own PID files (and
   their children) are not foreign.
 - **install** (cloud sessions only) — `npm install -g @beads/bd@$BD_VERSION`;
   dolt from the GitHub release tarball, refused unless its SHA-256 matches.

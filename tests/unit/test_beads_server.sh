@@ -66,9 +66,11 @@ EOF
 echo "bd \$*" >>"$E/log/bd"
 case "\$1" in
   version) echo "bd version \$(cat "$E/bd.version" 2>/dev/null || echo 9.9.9) (stub)";;
-  status) echo '{"summary":{"ready_issues": 3, "in_progress_issues": 1}}';;
+  status) [ -f "$E/db.missing" ] && { echo "Error: database not found" >&2; exit 1; }
+          echo '{"summary":{"ready_issues": 3, "in_progress_issues": 1}}';;
   sync) exit \$(cat "$E/bd.sync.rc" 2>/dev/null || echo 0);;
-  bootstrap) mkdir -p "$E/data/testdb";;
+  bootstrap) [ -f "$E/bootstrap.fail" ] && { echo "clone failed: permission denied (no DoltHub credentials)" >&2; exit 1; }
+             rm -f "$E/db.missing"; mkdir -p "$E/data/testdb";;
 esac
 exit 0
 EOF
@@ -202,6 +204,40 @@ shared_case healthy 1 0 shared
 shared_case halted 1 1 broken
 shared_case down 0 0 broken
 shared_case both 0 1 broken
+
+# A healthy shared server that does not hold this repo's database yet: the
+# database is part of this repo, so setup clones it there with bd bootstrap
+# (owner, 2026-11-28). Still no install, no own server, no own sync loop.
+shared_missing() { # <name> <bootstrap fails: 1|0>
+  new_env "m-$1"
+  mkdir -p "$E/home/.local/state/ai-sandbox"
+  touch "$E/server.up" "$E/db.missing"
+  [ "$2" = 1 ] && touch "$E/bootstrap.fail"
+  EXTRA_ENV="CLAUDE_CODE_REMOTE=true" run_s setup
+  if [ ! -s "$E/log/npm" ] && ! grep -q 'sql-server' "$E/log/dolt" 2>/dev/null && [ ! -f "$E/data/sync-loop.pid" ]; then
+    pass "shared, database missing ($1): nothing installed, no own server or loop"
+  else
+    fail "shared, database missing ($1): nothing installed, no own server or loop"
+  fi
+}
+shared_missing clone 0
+if [ "$RC" -eq 0 ] && grep -q '^bd bootstrap --yes' "$E/log/bd" && [ ! -f "$E/db.missing" ]; then
+  pass "shared, database missing: setup clones it with bd bootstrap"
+else
+  fail "shared, database missing: setup clones it with bd bootstrap" "rc=$RC out=$OUT bd=$(cat "$E/log/bd" 2>/dev/null)"
+fi
+shared_missing fails 1
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'permission denied (no DoltHub credentials)'; then
+  pass "shared, clone fails: setup exits non-zero and shows bd's error"
+else
+  fail "shared, clone fails: setup exits non-zero and shows bd's error" "rc=$RC out=$OUT"
+fi
+# The healthy case above (database present) must not bootstrap.
+new_env m-present
+mkdir -p "$E/home/.local/state/ai-sandbox"; touch "$E/server.up"
+run_s setup
+[ "$RC" -eq 0 ] && ! grep -q bootstrap "$E/log/bd" 2>/dev/null \
+  && pass "shared, database present: no bootstrap" || fail "shared, database present: no bootstrap" "rc=$RC bd=$(cat "$E/log/bd" 2>/dev/null)"
 
 # ---- 6. creds never prints the key ------------------------------------------
 new_env creds
