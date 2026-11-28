@@ -66,6 +66,14 @@ field is deprecated in 1.3.4):
 {"database":"dolt","backend":"dolt","dolt_mode":"server","dolt_database":"<database>","project_id":"<uuid>"}
 ```
 
+Commit it byte-identical to what `bd bootstrap` writes: indented JSON with
+**no trailing newline**. `bd bootstrap` (1.3.4) rewrites this file, and the
+setup script runs it whenever the local database is missing, which in a
+cloud sandbox is every session. If the committed copy ends in a newline,
+every session starts with a one-byte diff that the uncommitted-changes stop
+hook flags. The easiest way to get the exact bytes is to copy the file from
+a bd run rather than hand-writing it (see 6.1).
+
 `.beads/config.yaml` — at least:
 
 ```yaml
@@ -213,3 +221,34 @@ fields (`revision`) and rekeyed comment IDs to differ.
 | Push/pull uses the wrong DoltHub identity | Push/pull run inside the server process | Import the key for the user that runs the server |
 | Dolt remote silently becomes GitHub | bd adopts git origin when no remote is set | `BD_NO_REMOTE_ADOPT=1` |
 | Old bd refuses the database | bd refuses databases migrated by a newer bd | One pin for every clone; status line checks it |
+| Every session starts with `.beads/metadata.json` modified (only the final newline differs) | `bd bootstrap` rewrites the file without a trailing newline; the setup script bootstraps in every fresh sandbox | Commit the file without a trailing newline (section 4). Steady-state `bd status`/`ready`/`sync` leave it alone |
+| `cannot close <id>: assignee is "owner", actor is "Claude"` | The assignee is the literal string `owner`, which no actor matches; in a sandbox every bd command, the owner's included, runs as `Claude` | Leave owner beads unassigned (section 9). For an already-assigned bead: `--actor <assignee>`, which keeps the audit trail honest, not `--force`, which records `Claude` |
+
+## 9. Identity: actor, assignee and creator
+
+bd 1.3.4, checked live on 2026-11-28.
+
+- **Actor** (who is running the command): the first of `--actor`,
+  `$BEADS_ACTOR`, `actor:` in `.beads/config.yaml`, git `user.name`,
+  `$USER`. In a cloud sandbox git `user.name` is `Claude`, so the owner
+  typing a command and the agent are the same actor. bd cannot tell
+  them apart.
+- **Assignee** (who may close or update the bead): empty on
+  `bd create` unless `--assignee` is passed. `bd update --claim` sets it to
+  the actor. bd refuses a close by any other actor unless that actor uses
+  `--force`. An empty assignee lets any actor close or update the bead.
+- **Creator** (`created_by`, plus bd's own `owner` field): the actor and
+  git `user.email` at creation. They are audit-only and gate nothing. In a
+  sandbox they are `Claude` and `noreply@anthropic.com`.
+
+Rules this repo follows:
+
+- Do not assign beads to a role string such as `owner`. No actor matches
+  it, so it forces everyone, the owner included, onto `--force`. Owner-only
+  beads stay unassigned and say "with the owner" or "owner decides" in the
+  title. The guard is the repo's rules, not bd. (The seven
+  `owner`-assigned beads were cleared on 2026-11-28.)
+- Do not make the actor the owner's identity (`BEADS_ACTOR` or
+  `actor:` in `config.yaml`) to get around the check. In a sandbox the
+  agent would then act, and be recorded, as the owner.
+
