@@ -134,3 +134,47 @@ live_mode() {
     *) echo "readonly" ;;   # fail-closed on any unknown value
   esac
 }
+
+# ---- federated-token propagation wait (kp-2al.57) ---------------------------
+# EKS reports an OIDC identity-provider association ACTIVE minutes BEFORE the
+# API server honours tokens from that issuer (documented 10-25 min; build #7
+# and the 2026-11-28 final build both hit it). A check run right after a
+# bring-up must not fail on that window, and must not wait forever either.
+#
+# fed_auth_wait <try_fn> <refresh_fn> — call <try_fn> until it succeeds.
+#   <try_fn> returns 0 = accepted, 10 = the API answered Unauthorized (the
+#   propagation window: retry), anything else = a real failure (stop now).
+#   <refresh_fn> runs before each retry (renew a short-lived token; non-zero
+#   stops with rc 11). Bounded by LIVE_FED_AUTH_WAIT seconds (default 1800),
+#   polling every LIVE_FED_AUTH_INTERVAL seconds (default 30). Prints the
+#   elapsed time on every retry. Returns 0, 10 (deadline passed), 11, or the
+#   try_fn's own failure code.
+fed_auth_wait() {
+  local try_fn="$1" refresh_fn="$2"
+  local wait="${LIVE_FED_AUTH_WAIT:-1800}" every="${LIVE_FED_AUTH_INTERVAL:-30}"
+  local start now rc
+  start="$(date +%s)"
+  while :; do
+    "$try_fn"; rc=$?
+    if [ "$rc" -eq 0 ]; then
+      now="$(date +%s)"
+      echo "  federated token accepted after $((now - start))s"
+      return 0
+    fi
+    if [ "$rc" -ne 10 ]; then
+      return "$rc"
+    fi
+    now="$(date +%s)"
+    if [ $((now - start)) -ge "$wait" ]; then
+      echo "  the API still rejected the token as Unauthorized after $((now - start))s (LIVE_FED_AUTH_WAIT=${wait})"
+      return 10
+    fi
+    echo "  API answered Unauthorized: EKS is not yet honouring the issuer (documented propagation lag); retry in ${every}s ($((now - start))s of ${wait}s)"
+    sleep "$every"
+    if ! "$refresh_fn"; then
+      echo "  could not renew the federated id_token before retrying"
+      return 11
+    fi
+  done
+}
+

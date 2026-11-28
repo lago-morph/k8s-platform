@@ -140,6 +140,7 @@ run_suite tests/unit/test_externalsecret_antidrift_enums.sh
 run_suite tests/unit/test_rds_live_check_vpc_logic.sh
 # Phase-5: the federation oracle's mode gate + claim-decode pipeline.
 run_suite tests/unit/test_federation_oracle_logic.sh
+run_suite tests/unit/test_fed_auth_wait.sh
 # Every after-tier check read must be granted by the scoped verifier
 # policy (the live-verify 28759141867 denied-read class).
 run_suite tests/unit/test_verifier_policy_covers_check_reads.sh

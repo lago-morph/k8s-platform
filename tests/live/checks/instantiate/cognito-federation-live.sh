@@ -318,20 +318,70 @@ CA_FILE="$WORK/ca.pem"
 aws eks describe-cluster --name "$crossplane_cluster" --region "$REGION" \
   --query 'cluster.certificateAuthority.data' --output text 2>/dev/null | base64 -d > "$CA_FILE"
 
+REFRESH_TOKEN="$(printf '%s' "$TOKENS" | jq -r '.refresh_token // empty')"
+
+# id_token expiry (epoch seconds) from its payload; 0 if unreadable.
+# shellcheck disable=SC2317  # invoked indirectly by fed_auth_wait
+token_exp() {
+  printf '%s' "$ID_TOKEN" | cut -d. -f2 | python3 -c 'import sys,base64,json
+p=sys.stdin.read().strip(); p+="="*(-len(p)%4)
+try: print(int(json.loads(base64.urlsafe_b64decode(p)).get("exp",0)))
+except Exception: print(0)'
+}
+
+# Renew the id_token through the refresh grant when it is within 90 s of
+# expiry (Keycloak tokens live minutes; the propagation wait can be longer).
+# shellcheck disable=SC2317  # invoked indirectly by fed_auth_wait
+refresh_if_needed() {
+  local exp now t
+  exp="$(token_exp)"; now="$(date +%s)"
+  [ $((exp - now)) -gt 90 ] && return 0
+  [ -n "$REFRESH_TOKEN" ] || return 1
+  t="$(curl -sS --max-time "$CURL_MAX" \
+    --data-urlencode "grant_type=refresh_token" \
+    --data-urlencode "client_id=kubernetes" \
+    --data-urlencode "refresh_token=$REFRESH_TOKEN" \
+    "$TOKEN_EP")" || return 1
+  ID_TOKEN="$(printf '%s' "$t" | jq -r '.id_token // empty')"
+  REFRESH_TOKEN="$(printf '%s' "$t" | jq -r '.refresh_token // empty')"
+  [ -n "$ID_TOKEN" ] || return 1
+  log "renewed the federated id_token (refresh grant)"
+}
+
+# One attempt: direct API first; the SSM relay when the direct path is not
+# reachable from here. 0 = accepted, 10 = the API said Unauthorized, 1 = other.
+# shellcheck disable=SC2317  # invoked indirectly by fed_auth_wait
+whoami_try() {
+  if WHOAMI="$(kubectl --server "$EP" --certificate-authority "$CA_FILE" \
+        --token "$ID_TOKEN" auth whoami -o json 2>"$WORK/whoami.err")"; then
+    return 0
+  fi
+  if grep -q "Unauthorized" "$WORK/whoami.err" 2>/dev/null; then
+    return 10
+  fi
+  if [ -x "$HELPER" ] && command -v session-manager-plugin >/dev/null 2>&1; then
+    # Sandbox path: the egress gateway 503s the private-CA API endpoint —
+    # ride the SSM relay (transparent TCP; the real CA verifies end-to-end).
+    log "direct API unreachable ($(head -c 120 "$WORK/whoami.err" 2>/dev/null)…) — trying the SSM relay"
+    if WHOAMI="$("$HELPER" -c "$crossplane_cluster" --exec kubectl --token "$ID_TOKEN" auth whoami -o json 2>"$WORK/whoami-relay.err" | sed -n '/^{/,$p' | sed '/^stopped tunnel/d')" && [ -n "$WHOAMI" ]; then
+      return 0
+    fi
+    grep -q "Unauthorized" "$WORK/whoami-relay.err" 2>/dev/null && return 10
+  fi
+  return 1
+}
+
 WHOAMI=""
-if WHOAMI="$(kubectl --server "$EP" --certificate-authority "$CA_FILE" \
-      --token "$ID_TOKEN" auth whoami -o json 2>"$WORK/whoami.err")"; then
-  :
-elif [ -x "$HELPER" ] && command -v session-manager-plugin >/dev/null 2>&1; then
-  # Sandbox path: the egress gateway 503s the private-CA API endpoint —
-  # ride the SSM relay (transparent TCP; the real CA verifies end-to-end).
-  log "direct API unreachable ($(head -c 120 "$WORK/whoami.err" 2>/dev/null)…) — retrying via the SSM relay"
-  WHOAMI="$("$HELPER" -c "$crossplane_cluster" --exec kubectl --token "$ID_TOKEN" auth whoami -o json 2>"$WORK/whoami-relay.err" | sed -n '/^{/,$p' | sed '/^stopped tunnel/d')" \
-    || { ng "kubectl with the federated token failed through the relay too"; relay_err_tail "$WORK/whoami-relay.err"; exit 1; }
-else
-  ng "kubectl with the federated token failed: $(head -c 200 "$WORK/whoami.err" 2>/dev/null)"
-  exit 1
-fi
+fed_auth_wait whoami_try refresh_if_needed; rc=$?
+case "$rc" in
+  0) : ;;
+  10) ng "the spoke API never accepted the federated token (still Unauthorized at the deadline) — IdP association or claim mapping is broken, not just propagating"
+      relay_err_tail "$WORK/whoami.err"; exit 1 ;;
+  11) ng "could not renew the federated id_token during the propagation wait"; exit 1 ;;
+  *) ng "kubectl with the federated token failed: $(head -c 200 "$WORK/whoami.err" 2>/dev/null)"
+     [ -f "$WORK/whoami-relay.err" ] && relay_err_tail "$WORK/whoami-relay.err"
+     exit 1 ;;
+esac
 
 K_USER="$(printf '%s' "$WHOAMI" | jq -r '.status.userInfo.username // ""')"
 K_GROUPS="$(printf '%s' "$WHOAMI" | jq -c '.status.userInfo.groups // []')"
