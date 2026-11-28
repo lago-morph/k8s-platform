@@ -1,91 +1,124 @@
 # k8-platform
 
-A real-world, production-like Kubernetes platform on AWS — built as a learning reference and blog post series.
+A production-like Kubernetes platform on AWS, built as a learning reference
+and the companion to a planned blog series. It covers what has to exist
+before an application can run in an enterprise setting: a GitOps control
+plane, automatic DNS and TLS, single sign-on for cluster access, secrets that
+never live in Git, and a management plane that survives a bad rollout.
 
-This fills the gap between "deploy an app to a cluster" tutorials and what actually has to exist before an application can run in an enterprise context: automatic TLS, SSO, secrets that don't live in Git, cross-cluster observability, and a management plane that survives a bad rollout.
+The platform is **intentionally ephemeral**: it is built from nothing on a
+fresh AWS account, verified, and torn down. Rebuilding from scratch is the
+product, not a chore.
+
+## Status
+
+**Working and tested end to end.** The latest clean build (#11, 2026-11-28)
+was built from `main` on a brand-new AWS account with no manual fixes, and
+the platform's own behavioural suite (Live verify) passed every check:
+`pass=30 skip=0 fail=0`. Run IDs and the full record of every build are in
+[`SUBSTRATE-READINESS.md`](SUBSTRATE-READINESS.md).
+
+| | Today |
+|---|---|
+| **Management cluster** (the hub) | Built and verified |
+| **Platform services cluster** (the first spoke) | Built and verified |
+| **Tenant / workload clusters** | Defined in the repository but not built; planned for a future release |
+| Kubernetes | 1.37 on every cluster |
+| Nodes | 2× `m5.large` per cluster, Amazon Linux 2023 |
+
+What comes next is in [`ai/roadmap.md`](ai/roadmap.md): step 3 (feature
+complete) is done; step 3.1 brings every component to its current release and
+pins every dependency.
 
 ## Architecture
 
-Three-tier cluster topology:
-
 ```
-Management Cluster (EKS, Terraform)
-  └── ArgoCD hub + Crossplane + ESO
-      ├── Platform Services Cluster (EKS, Crossplane)
-      │     └── ingress-nginx, ExternalDNS, ACM TLS (Crossplane),
-      │         Keycloak, Prometheus, Grafana, Loki
-      └── Workload Clusters (EKS, Crossplane)
-            └── ingress-nginx, ExternalDNS, ACM TLS (Crossplane),
-                ESO, Prometheus/Loki agent
-```
-
-See [`ai/DESIGN.md`](ai/DESIGN.md) for full architecture rationale and ADRs.
-
-## Prerequisites
-
-- AWS account with sufficient IAM permissions (EKS, VPC, Route53, Secrets Manager, IAM, Cognito)
-- A registered domain with Route53 as the DNS provider (or delegated to Route53)
-- Terraform >= 1.6
-- `kubectl`, `helm`, `aws` CLI installed locally
-- AWS credentials available in environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`) or via a named profile (`AWS_PROFILE`)
-
-## Repository Structure
-
-```
-terraform/base/          # Iteration 0: VPC, Route53, Cognito
-terraform/management/    # Iteration 1: Management EKS cluster
-argocd/                  # ArgoCD Application and Project manifests
-crossplane/              # XRDs, Compositions, example Claims
-clusters/                # Per-cluster resource overlays
-platform-services/       # Helm values for platform components
-docs/                    # ADRs, iteration notes, diagrams
-ai/                      # Design docs and requirements
+GitHub repository  ──(GitOps)──►  Management cluster  (EKS, built by Terraform)
+                                    Argo CD · Crossplane · External Secrets
+                                    ingress-nginx · ExternalDNS
+                                         │ provisions and deploys to
+                                         ▼
+                                  Platform services cluster  (EKS, built by Crossplane)
+                                    ingress-nginx · ExternalDNS · External Secrets
+                                    Keycloak · Prometheus · Grafana · Loki
+                                    EBS CSI storage · the "hello" demo app
+                                         ·
+                                         ·  future release
+                                         ▼
+                                  Tenant / workload clusters  (EKS, built by Crossplane)
 ```
 
-## Build Order (Iterations)
+- **The hub is the only part Terraform builds.** Everything else is created
+  by Crossplane and deployed by Argo CD from this repository, so a bad
+  platform change can never take down the thing that would repair it.
+- **TLS** is AWS Certificate Manager, issued and DNS-validated through
+  Crossplane and terminated at each cluster's load balancer, which accepts
+  TLS 1.2 and 1.3 only.
+- **Identity:** Keycloak on the platform cluster federates to an Amazon
+  Cognito user pool, and EKS trusts Keycloak, so `kubectl` users sign in with
+  a directory account. Argo CD and Grafana SSO are planned.
+- **Secrets** live in AWS Secrets Manager and reach clusters through External
+  Secrets; IAM roles for service accounts everywhere, no static credentials
+  in any manifest.
 
-| # | Deliverable | End State |
-|---|-------------|-----------|
-| 0 | Base environment | Route53 zone exists; Cognito user pool with test user |
-| 1 | Management cluster | ArgoCD UI at `argocd.management.<domain>` with valid TLS |
-| 2 | Crossplane foundations | `PlatformSecret` claim creates ASM secret + K8s Secret |
-| 3 | Platform services cluster | Test app at `hello.platform.<domain>` with auto TLS/DNS |
-| 4 | Observability | Grafana at `grafana.platform.<domain>` with cross-cluster metrics |
-| 5 | Authentication | ArgoCD + Grafana SSO via Keycloak → Cognito |
-| 6 | First workload cluster | New cluster from one Crossplane claim + one Git commit |
+Concepts in more depth: [Platform topology](docs/site/explanation/platform-topology.md).
+Design rationale: [`ai/DESIGN.md`](ai/DESIGN.md) and the decision records in
+[`decisions/`](decisions/) and [`docs/decisions/`](docs/decisions/).
 
-## Getting Started
+## Building it
 
-### Iteration 0 — Base Environment
+Everything happens from a browser: GitHub Actions and the AWS console.
+Nothing needs to be installed on your machine. The full, step-by-step guide
+is **[Build the platform from nothing](docs/site/how-to/build-the-platform-from-nothing.md)**.
+In short:
 
-```bash
-cd terraform/base
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars: set domain, aws_region, etc.
-terraform init
-terraform plan
-terraform apply
+1. **Ops box → apply** creates a small EC2 instance that drives the build.
+2. Open a Session Manager shell to it from the AWS console and run
+   `k8p-bringup.sh`.
+3. When it asks, run **Terraform Test** with `phase=base`, then with
+   `phase=management`.
+4. When it prints `BRING-UP COMPLETE`, run **Live verify** for the
+   platform's verdict.
+
+**Prerequisites:** an AWS account with a public Route53 hosted zone, its
+credentials in this repository's GitHub Actions secrets
+(`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`), and the repository variable
+`AWS_REGION`. A full build takes about an hour.
+
+When you are done: [Tear the platform down](docs/site/how-to/tear-the-platform-down.md).
+
+## Using it
+
+- [Admin access](docs/site/how-to/admin-access.md): cluster access over the
+  public endpoints (`scripts/k8p-kubeconfig.sh`), the Argo CD admin password
+  (`scripts/k8p-argocd-password.sh`), and directory accounts
+  (`scripts/k8p-cognito-user.sh`).
+- [Check health and find URLs](docs/site/how-to/check-health-and-find-url.md),
+  including where to find logs.
+- [Deploy an application](docs/site/how-to/deploy-an-application.md) and the
+  other how-to guides.
+
+The documentation site is published at
+**<https://lago-morph.github.io/k8s-platform/>**.
+
+## Repository layout
+
+```
+terraform/base/        shared AWS foundations: VPC, certificate, Cognito, state
+terraform/management/  the management (hub) cluster and everything installed on it
+terraform/opsbox/      the ops box that drives a build
+crossplane/            XRDs and Compositions (platform cluster, secrets, databases, spoke access)
+clusters/              the composite resources that define each spoke cluster
+argocd/                Argo CD Applications, ApplicationSets and Projects
+platform-services/     Helm values for everything on the platform cluster
+scripts/               bring-up driver, admin scripts, diagnostics
+tests/                 unit, chainsaw (Crossplane on kind) and live behavioural suites
+docs/site/             the documentation site (how-tos, reference, explanation)
+ai/                    roadmap, handoff, design, and agent working notes
 ```
 
-### Iteration 1 — Management Cluster
+## Contributing (humans and agents)
 
-```bash
-cd terraform/management
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars: set domain, cluster_name, etc.
-terraform init
-terraform plan
-terraform apply
-```
-
-After `apply`, ArgoCD takes over. All subsequent changes are GitOps — commit to this repo and ArgoCD reconciles.
-
-## Key Design Decisions
-
-- **Terraform only for management cluster** — provides break-glass recovery; Crossplane manages everything else
-- **Crossplane XRDs** (`PlatformCluster`, `PlatformSecret`) — platform abstractions hide AWS specifics from consumers
-- **IRSA everywhere** — no static AWS credentials in any manifest or secret
-- **AWS Secrets Manager + ESO** — no secrets in Git, ever
-- **Real domain + ACM (via Crossplane)** — no self-signed certificates; DNS-validated wildcard certs terminated at the ingress NLB (see docs/decisions/0003)
-
-Full rationale in [`ai/DESIGN.md`](ai/DESIGN.md). Requirements in [`ai/REQUIREMENTS.md`](ai/REQUIREMENTS.md).
+Agents start with [`AGENTS.md`](AGENTS.md). The working rule for everyone:
+**done means proven on a clean build** — a change counts only when a build
+from committed code, with no manual steps, shows it working.
