@@ -189,14 +189,14 @@ gaps.
 
 ## How the plan is tracked
 
-Beads (`bd`, prefix `kp`) holds the task graph; Dolt data lives on the
-branch `beads-dolt-data` of this repository (plus Dolt's own
-`__dolt_remote_info__`; neither is a code branch —
-`ai/beads-dolt-git-remotes.md` explains why a branch and how sync works).
-Hooks, not instructions, keep it in sync: session start installs the
-pinned `bd` and pulls; every assistant turn end, every compaction, and
-every `git push` push unpushed beads, and a failed beads push blocks the
-code push. Epics mirror the steps above plus the v2.0 bucket; the step 3
+Beads (`bd`, prefix `kp`) holds the task graph; the Dolt data lives in a
+private DoltHub database (`sync.remote` in `.beads/config.yaml`;
+`ai/beads-dolthub.md` explains the mechanism). Hooks, not instructions,
+keep it in sync: session start installs the pinned `bd` and `dolt`,
+starts a local server, clones from DoltHub when needed, and starts a
+`bd sync` every minute; every `git push` runs one `bd sync` first, and a
+failed sync (error, merge conflict, stuck working set) blocks the code
+push. Epics mirror the steps above plus the v2.0 bucket; the step 3
 epic carries the build #6 recipe at a level a follow-the-recipe agent can
 execute without improvising. The `beads` skill records the working
 habits and may be improved in place by any session, with a note to the

@@ -11,13 +11,33 @@
 # no-op, so re-runs (resume/clear/compact) are cheap.
 set -uo pipefail
 
+# Beads (the task graph, ai/roadmap.md): bd in server mode against a local
+# dolt sql-server, synced with DoltHub every minute (ai/beads-dolthub.md).
+# Runs on every machine, before the remote-only toolchain step: `setup`
+# first detects a shared sandbox (whose server is managed elsewhere) or a
+# foreign bd/dolt, and then sets up nothing. Non-fatal: a beads failure
+# never breaks session start, but it is printed loudly.
+REPO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+if [ -f "${REPO_DIR}/scripts/beads-server.sh" ]; then
+  if bash "${REPO_DIR}/scripts/beads-server.sh" setup; then
+    # A shared sandbox serves on 127.0.1.1; hand that to the agent's shell.
+    if [ -d "$HOME/.local/state/ai-sandbox" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+      echo 'export BEADS_DOLT_SERVER_HOST=127.0.1.1' >> "$CLAUDE_ENV_FILE"
+    fi
+    # Not `bd prime`: its generic "session close protocol" text conflicts
+    # with this repo's done-contract. One status line + the ready queue.
+    ( cd "${REPO_DIR}" && bash scripts/beads-server.sh status && bd ready 2>/dev/null | head -20 ) || true
+  else
+    echo "session-start: beads setup FAILED — no task graph this session (message above)." >&2
+    bash "${REPO_DIR}/scripts/beads-server.sh" status >&2 || true
+  fi
+fi
+
 # Only touch the ephemeral remote sandbox; local dev machines manage their
 # own toolchain (avoid writing to a developer's /usr/local/bin).
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
-
-REPO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 if ! bash "${REPO_DIR}/scripts/sandbox-setup.sh"; then
   echo "session-start: sandbox-setup.sh reported a failure; some CLIs may be missing." >&2
@@ -40,23 +60,5 @@ fi
 
 # Never block session start on a transient install/network hiccup — the
 # agent runs scripts/whereami.sh first (AGENTS §8.1) and will see anything missing.
-
-# Beads (the task graph, ai/roadmap.md): install the pinned bd, pull the
-# Dolt data from the beads-dolt-data branch (bootstrap on a fresh clone),
-# then print the workflow context. Hooks, not instructions, keep the graph
-# in sync (owner direction 2026-09-08; mechanics in
-# ai/beads-dolt-git-remotes.md). Non-fatal: a beads failure must never
-# break session start, but it is printed loudly.
-if [ -f "${REPO_DIR}/scripts/beads-sync.sh" ]; then
-  if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-    bash "${REPO_DIR}/scripts/beads-sync.sh" install || echo "session-start: beads install FAILED" >&2
-  fi
-  if command -v bd >/dev/null 2>&1; then
-    ( cd "${REPO_DIR}" && bash scripts/beads-sync.sh bootstrap ) || echo "session-start: beads bootstrap/pull FAILED — run: bash scripts/beads-sync.sh bootstrap" >&2
-    # Not `bd prime`: its generic "session close protocol" text conflicts
-    # with this repo's done-contract. One status line + the ready queue.
-    ( cd "${REPO_DIR}" && bash scripts/beads-sync.sh status && bd ready 2>/dev/null | head -20 ) || true
-  fi
-fi
 
 exit 0

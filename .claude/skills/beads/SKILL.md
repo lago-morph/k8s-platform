@@ -3,7 +3,7 @@ name: beads
 description: >-
   How this repository uses beads (bd) as its task graph: what is tracked,
   how to claim and close work with evidence, what the hooks already do for
-  you (install, pull, push, status), and the MVP/v2.0 rule for new work.
+  you (install, serve, sync, status), and the MVP/v2.0 rule for new work.
   Trigger phrases: "bd ready", "claim a bead", "close the bead", "what's
   next", "add a task", "where is the plan", "v2.0 bucket".
 allowed-tools:
@@ -15,37 +15,48 @@ allowed-tools:
 
 The plan lives in three places that must agree: `ai/roadmap.md` (steps and
 the MVP criterion), `ai/handoff.md` (verified state), and the beads graph
-(the tasks; prefix `kp`). Dolt data is on the branch `beads-dolt-data`;
-`ai/beads-dolt-git-remotes.md` explains the mechanics.
+(the tasks; prefix `kp`). The Dolt data is in a private DoltHub database
+(`sync.remote` in `.beads/config.yaml`); `ai/beads-dolthub.md` explains the
+mechanics.
 
 ## What the hooks already do (do not repeat by hand)
 
-SessionStart installs the pinned `bd`, pulls the graph, prints a status
-line and `bd ready`. Every prompt injects the status line. Every assistant
-turn end (Stop), every compaction, and every `git push` push unpushed beads;
-a failed beads push blocks the code push. You never run `bd dolt push`.
+SessionStart runs `scripts/beads-server.sh setup`: it installs the pinned
+`bd` and `dolt`, imports the DoltHub key, starts a local `dolt sql-server`
+(127.0.0.1:3307), clones the database with `bd bootstrap` when missing, and
+starts a background `bd sync` every 60 s. Then it prints a status line and
+`bd ready`. Every prompt injects the status line (`last-sync=<code> <age>`).
+Every `git push` first runs one `bd sync`; error, merge conflict or a stuck
+working set blocks the code push. You never run `bd dolt push` or `bd sync`
+by hand, and never `bd compact` / `bd flatten` (events are machine-local).
 
-## If the session starts with no task graph
+On a **shared sandbox** (`~/.local/state/ai-sandbox` exists) the server at
+127.0.1.1:3307 is managed outside this repo: setup only points bd at it
+and installs, starts and syncs nothing. If bd or dolt processes it did not
+start are running on an ordinary machine, setup sets up nothing and says so.
 
-`bd ready` answering `no beads database found` means SessionStart's bootstrap
-died, and `.claude/hooks/beads-prepush-guard.sh` will refuse every `git push`
-until it is fixed. Recovery, in order:
+## If the status line says `beads: UNAVAILABLE`
+
+The reason is on the line. Recovery, in order:
 
 ```bash
-bash scripts/beads-sync.sh bootstrap   # re-run it; it prints why it failed
-bd ready                               # confirm the graph is back
+bash scripts/beads-server.sh setup    # re-run it; it prints why it failed
+bd ready                              # confirm the graph is back
 ```
 
-If bootstrap dies with `cannot seed mirror with a branch`, you are on a `bd`
-older than the kp-du3 fix or a patched-out `scripts/beads-sync.sh`: the sandbox
-clones this repository shallow and git rejects pushing shallow history.
-`git fetch --unshallow origin` then re-run bootstrap. The supported fix is in
-`seed_mirror()` (never push `HEAD` into the mirror); the regression test is
-`tests/unit/test_beads_sync_shallow_bootstrap.sh`.
+- `no DoltHub key`: the environment lacks the `DOLTHUB_CREDS_JWK` secret.
+  Tell the owner; there is no task graph this session.
+- `FOREIGN bd/dolt PROCESSES`: stop and report the listed processes to
+  the owner. Never kill them or start a second server.
+- `SHARED SANDBOX BEADS CONFIG IS BROKEN`: report it with the named check
+  and `~/.local/state/ai-sandbox/beads-sync.log`. Do not try to repair it.
+- `bd X installed, versions.env pins Y`: re-run setup (it installs the pin).
+- Never clone the database with a plain `dolt clone`: it lacks bd's
+  machine-local tables and bd fails with `table not found: leases`.
+  `bd bootstrap` is the only supported clone.
 
 Never work around a dead graph by editing beads by hand or by bypassing the
-prepush guard — un-synced task state stranded behind a merged PR is exactly
-what the guard exists to prevent.
+pre-push sync.
 
 ## Working a bead
 
@@ -94,7 +105,7 @@ bd update <id> --claim         bd close <id> --reason "..."
 bd create "t" -t task|bug|feature|decision -p 0-4 --parent <epic> -l step-N
 bd dep add <issue> <blocker>   # <issue> depends on <blocker>
 bd list -l v2.0                # the deferred bucket
-bash scripts/beads-sync.sh status|push|bootstrap
+bash scripts/beads-server.sh status|setup|sync-now
 ```
 Gotchas: `bd create --deps "blocks:<id>"` makes the NEW bead block `<id>`.
 `bd show` (text) silently hides angle-bracket tokens like `<spoke>` in body

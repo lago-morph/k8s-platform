@@ -191,10 +191,10 @@ run_suite tests/unit/test_no_placeholder_runtime_values.sh
 run_suite tests/unit/test_aws_text_bool_compare.sh
 run_suite tests/unit/test_chainsaw_dispatch_sha_guard.sh
 
-# kp-du3: the beads bootstrap must work from the SHALLOW clone a web sandbox
-# gets; when it does not, the session starts with no task graph and the
-# prepush guard blocks every push.
-run_suite tests/unit/test_beads_sync_shallow_bootstrap.sh
+# beads server mode (ai/beads-dolthub.md): shared-sandbox / foreign-process
+# detection, pins from versions.env, PID-guarded sync loop, key never
+# printed, fresh clones via `bd bootstrap` (a plain dolt clone is unreadable).
+run_suite tests/unit/test_beads_server.sh
 
 # kp-2al.24: operator guidance must confirm a gate sync by the completed
 # OPERATION, never by .status.sync.revision (which Argo sets from the observed
