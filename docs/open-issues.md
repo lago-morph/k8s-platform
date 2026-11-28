@@ -1,7 +1,7 @@
 # Open issues
 
-Registered debt now lives in the beads issue graph, synced through this
-repository's `beads-dolt-data` branch (`ai/beads-dolt-git-remotes.md`):
+Registered debt now lives in the beads issue graph, synced with DoltHub
+(`ai/beads-dolthub.md`):
 
 ```bash
 bd ready            # unblocked work

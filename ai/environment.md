@@ -48,8 +48,8 @@ design — discover it live, never hardcode it (enforced:
   branch (`--force-with-lease`) both succeed; pushing any non-branch ref
   (e.g. `refs/dolt/data`) and deleting a branch both fail with HTTP 403
   from the proxy. Branch cleanup therefore needs the GitHub UI or an API
-  path, and Dolt/beads data must live on a branch ref
-  (`ai/beads-dolt-git-remotes.md`).
+  path. (Beads data no longer lives in git: it is on DoltHub,
+  `ai/beads-dolthub.md`.)
 
 ## 3. Network egress
 
@@ -76,6 +76,9 @@ design — discover it live, never hardcode it (enforced:
   argocd CLI. Raw REST to `api.github.com` (release JSON) returns 403
   regardless — use the GitHub MCP tools; `registry.npmjs.org` is direct
   (no proxy) and works for pinned npm installs such as `@beads/bd`.
+  `www.dolthub.com` and `doltremoteapi.dolthub.com` (beads' Dolt remote)
+  must be allowed by the environment's network policy; the dolt release
+  tarball downloads from `github.com` (verified 2026-11-28).
 
 ## 4. Kubernetes & platform access
 

@@ -1,3 +1,5 @@
+> Superseded 2026-11-28 by server mode on DoltHub (`ai/beads-dolthub.md`). Kept as history.
+
 # Beads on Dolt with a Git remote — condensed reference for future sessions
 
 Purpose: everything a session needs to make beads store its data in this
